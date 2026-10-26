@@ -23,6 +23,7 @@ import {
 import { encrypt, decrypt } from '@/lib/whatsapp/encryption'
 import { resolveVerifyTokenForSave } from '@/lib/whatsapp/verify-token'
 import { getT } from '@/lib/i18n/translate'
+import { isCoexy } from '@/lib/whatsapp/provider'
 
 const t = getT('Api')
 
@@ -203,7 +204,12 @@ export async function GET() {
       app_id_match: boolean | null
       error?: string
     } = { checked: false, subscribed: null, app_id_match: null }
-    if (config.waba_id) {
+    if (isCoexy()) {
+      // Coexy's own Meta app owns the WABA subscription; it is in place
+      // whenever the channel is active (a dead channel fails the phone
+      // check above instead).
+      wabaSubscription = { checked: true, subscribed: true, app_id_match: true }
+    } else if (config.waba_id) {
       try {
         const subs = await getSubscribedApps({ wabaId: config.waba_id, accessToken })
         const state = appSubscriptionState(subs, process.env.META_APP_ID)
@@ -443,7 +449,11 @@ export async function POST(request: Request) {
     let registrationSkipped = false
 
     const needsRegistration = !sameNumber || (typeof pin === 'string' && pin.length > 0)
-    if (needsRegistration) {
+    if (isCoexy()) {
+      // Coexy registers the number during its Embedded Signup
+      // (connect_url); an active channel is already registered.
+      registeredAt = registeredAt ?? new Date().toISOString()
+    } else if (needsRegistration) {
       if (!pin) {
         // No PIN provided. Meta TEST numbers (Developer Console) are
         // pre-registered by Meta and expose no two-step verification
@@ -488,7 +498,11 @@ export async function POST(request: Request) {
     // has been written yet, so the user just fixes the cause and saves
     // again.
     let subscribedAppsAt: string | null = null
-    if (waba_id) {
+    if (isCoexy()) {
+      // Subscribed to Coexy's app by Coexy itself; our webhook is the one
+      // registered in Coexy (POST /api/webhooks), not in a Meta app.
+      subscribedAppsAt = new Date().toISOString()
+    } else if (waba_id) {
       try {
         await subscribeWabaToApp({
           wabaId: waba_id,

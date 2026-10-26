@@ -14,6 +14,7 @@
  */
 
 export const THEME_IDS = [
+  "funversa",
   "violet",
   "emerald",
   "cobalt",
@@ -23,7 +24,7 @@ export const THEME_IDS = [
 
 export type ThemeId = (typeof THEME_IDS)[number];
 
-export const DEFAULT_THEME: ThemeId = "violet";
+export const DEFAULT_THEME: ThemeId = "funversa";
 
 export const STORAGE_KEY = "wacrm.theme";
 
@@ -68,9 +69,15 @@ export interface ThemeMeta {
 
 export const THEMES: ReadonlyArray<ThemeMeta> = [
   {
+    id: "funversa",
+    name: "Funversa",
+    tagline: "Verde-petróleo e menta — a identidade do Funversa.",
+    swatch: "#5eead4",
+  },
+  {
     id: "violet",
     name: "Violet",
-    tagline: "The default — confident, slightly playful.",
+    tagline: "Confident, slightly playful.",
     swatch: "oklch(0.526 0.247 293)",
   },
   {

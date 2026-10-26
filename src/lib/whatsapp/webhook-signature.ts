@@ -78,3 +78,36 @@ export function verifyMetaWebhookSignature(
   }
   return ok
 }
+
+/**
+ * Verify a webhook relayed by Coexy (WHATSAPP_PROVIDER=coexy).
+ *
+ * Coexy signs the raw body with the `hmac_secret` returned when the
+ * webhook was created and sends `X-Coexy-Signature: sha256=<hex>` —
+ * same scheme as Meta, different header and secret. Fails closed when
+ * COEXY_HMAC_SECRET is missing. Accepts a comma-separated list so the
+ * secret can be rotated (create the new webhook, add its secret, then
+ * delete the old one).
+ */
+export function verifyCoexyWebhookSignature(
+  rawBody: string,
+  signatureHeader: string | null,
+): boolean {
+  const secrets = parseAppSecrets(process.env.COEXY_HMAC_SECRET)
+  if (secrets.length === 0) {
+    console.error(
+      '[webhook] COEXY_HMAC_SECRET is not set — rejecting request. ' +
+        'Use the hmac_secret returned when the Coexy webhook was created.',
+    )
+    return false
+  }
+
+  if (!signatureHeader) return false
+  if (!signatureHeader.startsWith('sha256=')) return false
+
+  let ok = false
+  for (const secret of secrets) {
+    if (signatureMatches(rawBody, signatureHeader, secret)) ok = true
+  }
+  return ok
+}

@@ -9,6 +9,7 @@ import { decrypt } from '@/lib/whatsapp/encryption'
 import { normalizeStatus } from '@/lib/whatsapp/template-status-normalize'
 import type { TemplateButton, TemplateSampleValues } from '@/types'
 import { getT } from '@/lib/i18n/translate'
+import { metaApiBase } from '@/lib/whatsapp/provider'
 
 const t = getT('Api')
 
@@ -26,7 +27,7 @@ const t = getT('Api')
  */
 
 const META_API_VERSION = 'v21.0'
-const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
+const META_API_BASE = metaApiBase(META_API_VERSION)
 
 interface MetaButton {
   type: string

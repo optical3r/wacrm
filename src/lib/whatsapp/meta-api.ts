@@ -11,11 +11,13 @@
 
 import { isBusinessScopedUserId } from './wa-identity'
 import { getT } from '@/lib/i18n/translate'
+import { metaApiBase } from './provider'
 
 const ti = getT('Validation.interactive')
 
 const META_API_VERSION = 'v21.0'
-const META_API_BASE = `https://graph.facebook.com/${META_API_VERSION}`
+// graph.facebook.com, or Coexy's meta-proxy when WHATSAPP_PROVIDER=coexy
+const META_API_BASE = metaApiBase(META_API_VERSION)
 
 export interface MetaSendResult {
   messageId: string
@@ -90,8 +92,17 @@ async function readMetaError(response: Response, fallback: string): Promise<Meta
   let envelope: MetaErrorResponse['error'] | undefined
   try {
     const data = (await response.json()) as MetaErrorResponse
-    envelope = data.error
-    if (envelope?.message) message = envelope.message
+    // Coexy's own errors (401/403/429/503) use a flat string:
+    // { "error": "CHANNEL_DISCONNECTED" }
+    const raw = (data as { error?: unknown }).error
+    if (typeof raw === 'string') {
+      message = raw === 'CHANNEL_DISCONNECTED'
+        ? 'Canal Coexy desconectado: reconecte o número pelo connect_url do canal no painel da Coexy.'
+        : raw
+    } else {
+      envelope = data.error
+      if (envelope?.message) message = envelope.message
+    }
   } catch {
     // response body wasn't JSON — keep the fallback
   }

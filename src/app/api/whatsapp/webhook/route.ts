@@ -13,7 +13,11 @@ import {
 } from '@/lib/whatsapp/wa-identity'
 import { findExistingContact, isUniqueViolation } from '@/lib/contacts/dedupe'
 import { reopenClosedConversation } from '@/lib/conversations/reopen'
-import { verifyMetaWebhookSignature } from '@/lib/whatsapp/webhook-signature'
+import {
+  verifyCoexyWebhookSignature,
+  verifyMetaWebhookSignature,
+} from '@/lib/whatsapp/webhook-signature'
+import { isCoexy } from '@/lib/whatsapp/provider'
 import { resumeAwaitingReply, runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
@@ -221,9 +225,13 @@ export async function POST(request: Request) {
   // Read raw body first so we can HMAC-verify the exact bytes Meta
   // signed. request.json() would re-encode and break the signature.
   const rawBody = await request.text()
-  const signature = request.headers.get('x-hub-signature-256')
+  // With Coexy as the relay the payload is Meta's, untouched, but the
+  // signature comes in X-Coexy-Signature under COEXY_HMAC_SECRET.
+  const verified = isCoexy()
+    ? verifyCoexyWebhookSignature(rawBody, request.headers.get('x-coexy-signature'))
+    : verifyMetaWebhookSignature(rawBody, request.headers.get('x-hub-signature-256'))
 
-  if (!verifyMetaWebhookSignature(rawBody, signature)) {
+  if (!verified) {
     // 401 (not 200) — we want Meta's delivery dashboard to show failures
     // loudly if a misconfiguration causes signatures to stop matching,
     // rather than silently eating events.
@@ -285,6 +293,14 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           },
           supabaseAdmin(),
         )
+        continue
+      }
+
+      // Coexistence: replies typed in the WhatsApp Business app on the
+      // phone arrive as echoes. Store them as agent messages so the
+      // inbox shows the whole conversation, not only what was sent here.
+      if (change.field === 'smb_message_echoes') {
+        await handleMessageEchoes(change.value as unknown as MessageEchoesValue)
         continue
       }
 
@@ -363,6 +379,96 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
         )
       }
     }
+  }
+}
+
+interface MessageEchoesValue {
+  metadata?: { phone_number_id?: string }
+  /** Same shape as an inbound message, but `from` is the business and `to` the customer. */
+  message_echoes?: Array<WhatsAppMessage & { to?: string }>
+}
+
+async function handleMessageEchoes(value: MessageEchoesValue) {
+  const phoneNumberId = value.metadata?.phone_number_id
+  if (!phoneNumberId || !value.message_echoes?.length) return
+
+  const { data: configRows, error: configError } = await supabaseAdmin()
+    .from('whatsapp_config')
+    .select('*')
+    .eq('phone_number_id', phoneNumberId)
+  if (configError || !configRows || configRows.length !== 1) {
+    console.error('[webhook] echo: no single config for phone_number_id:', phoneNumberId, configError)
+    return
+  }
+  const config = configRows[0]
+  const accessToken = decrypt(config.access_token)
+
+  for (const echo of value.message_echoes) {
+    if (!echo.to || echo.type === 'reaction') continue
+
+    // The customer is the recipient here, so key the contact on `to`.
+    const identity = resolveInboundIdentity({ from: echo.to }, { wa_id: echo.to, profile: {} })
+    if (!hasUsableIdentity(identity)) continue
+
+    const contactOutcome = await findOrCreateContact(config.account_id, config.user_id, identity)
+    if (!contactOutcome) continue
+    const convResult = await findOrCreateConversation(
+      config.account_id,
+      config.user_id,
+      contactOutcome.contact.id
+    )
+    if (!convResult) continue
+    const conversation = convResult.conversation
+
+    const { contentText, mediaUrl, mediaType } = await parseMessageContent(
+      echo,
+      accessToken,
+      config.mirror_inbound_media !== false ? { accountId: config.account_id } : null
+    )
+    const allowed = new Set(['text', 'image', 'document', 'audio', 'video', 'location', 'template', 'interactive'])
+    const contentType = allowed.has(echo.type) ? echo.type : echo.type === 'sticker' ? 'image' : 'text'
+    const sentAt = new Date(parseInt(echo.timestamp) * 1000).toISOString()
+
+    const { data: inserted, error } = await supabaseAdmin()
+      .from('messages')
+      .upsert(
+        {
+          conversation_id: conversation.id,
+          sender_type: 'agent',
+          content_type: contentType,
+          content_text: contentText,
+          media_url: mediaUrl,
+          media_type: mediaType,
+          message_id: echo.id,
+          status: 'sent',
+          created_at: sentAt,
+        },
+        { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
+      )
+      .select('id')
+    if (error) {
+      console.error('[webhook] echo insert failed:', error)
+      continue
+    }
+    if (!inserted || inserted.length === 0) continue // replayed delivery
+
+    await supabaseAdmin()
+      .from('conversations')
+      .update({
+        last_message_text: contentText || `[${echo.type}]`,
+        last_message_at: sentAt,
+        updated_at: new Date().toISOString(),
+      })
+      .eq('id', conversation.id)
+
+    // A human answered from the phone: yield the bot, same as a send
+    // from the inbox does.
+    await supabaseAdmin()
+      .from('flow_runs')
+      .update({ status: 'paused_by_agent', ended_at: new Date().toISOString(), end_reason: 'agent_replied' })
+      .eq('account_id', config.account_id)
+      .eq('contact_id', contactOutcome.contact.id)
+      .eq('status', 'active')
   }
 }
 

@@ -6,6 +6,7 @@ import {
   verifyPhoneNumber,
 } from '@/lib/whatsapp/meta-api'
 import { getT } from '@/lib/i18n/translate'
+import { isCoexy } from '@/lib/whatsapp/provider'
 
 const t = getT('Api')
 
@@ -115,8 +116,12 @@ export async function GET() {
     )
   }
 
-  // 2. WABA subscription — only meaningful if we have a waba_id
-  if (config.waba_id) {
+  // 2. WABA subscription — only meaningful if we have a waba_id.
+  // Under Coexy the subscription belongs to Coexy's app and isn't
+  // visible to a channel_token, so a working phone check stands in for it.
+  if (isCoexy()) {
+    checks.waba_subscribed_to_app = checks.phone_metadata_ok
+  } else if (config.waba_id) {
     try {
       const subs = await getSubscribedApps({
         wabaId: config.waba_id,
