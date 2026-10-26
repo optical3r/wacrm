@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   parseAppSecrets,
+  verifyCoexyWebhookSignature,
   verifyMetaWebhookSignature,
 } from "./webhook-signature";
 
@@ -129,5 +130,35 @@ describe("verifyMetaWebhookSignature", () => {
       expect(verifyMetaWebhookSignature(body, signedHeader(body, " , "))).toBe(false);
       expect(verifyMetaWebhookSignature(body, signedHeader(body, ""))).toBe(false);
     });
+  });
+});
+
+describe("verifyCoexyWebhookSignature", () => {
+  const body = JSON.stringify({ object: "whatsapp_business_account", entry: [] });
+  let saved: string | undefined;
+
+  beforeEach(() => {
+    saved = process.env.COEXY_HMAC_SECRET;
+    process.env.COEXY_HMAC_SECRET = "coexy-secret";
+  });
+
+  afterEach(() => {
+    if (saved === undefined) delete process.env.COEXY_HMAC_SECRET;
+    else process.env.COEXY_HMAC_SECRET = saved;
+  });
+
+  it("accepts a body signed with COEXY_HMAC_SECRET", () => {
+    expect(verifyCoexyWebhookSignature(body, signedHeader(body, "coexy-secret"))).toBe(true);
+  });
+
+  it("rejects the Meta app secret, a tampered body and a missing header", () => {
+    expect(verifyCoexyWebhookSignature(body, signedHeader(body))).toBe(false);
+    expect(verifyCoexyWebhookSignature(body + " ", signedHeader(body, "coexy-secret"))).toBe(false);
+    expect(verifyCoexyWebhookSignature(body, null)).toBe(false);
+  });
+
+  it("fails closed when COEXY_HMAC_SECRET is not set", () => {
+    delete process.env.COEXY_HMAC_SECRET;
+    expect(verifyCoexyWebhookSignature(body, signedHeader(body, "coexy-secret"))).toBe(false);
   });
 });
