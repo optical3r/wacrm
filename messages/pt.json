@@ -2075,7 +2075,8 @@
       "pairSteps": "No celular, abra o WhatsApp > Aparelhos conectados > Conectar um aparelho > Conectar com número de telefone e digite este código.",
       "notConfiguredTitle": "Conexão por QR code indisponível",
       "notConfiguredDesc": "Falta a variável DAPI_API_KEY no servidor. Fale com o administrador da plataforma.",
-      "adminOnly": "Só administradores da conta podem conectar o WhatsApp."
+      "adminOnly": "Só administradores da conta podem conectar o WhatsApp.",
+      "sessionLost": "A sessão de conexão expirou. Clique em Gerar QR code de novo."
     }
   },
   "SignupPage": {

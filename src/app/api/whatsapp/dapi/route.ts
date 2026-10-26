@@ -55,6 +55,18 @@ function unwrap(res: unknown): Obj {
   return isObj(r) ? r : {}
 }
 
+/**
+ * D-API sometimes reports failures in a 200 body (`{ code: 404, error }`),
+ * which the SDK does not throw for. Turn those into real errors.
+ */
+async function call<T>(p: Promise<T>): Promise<T> {
+  const res = await p
+  if (isObj(res) && typeof res.error === 'string' && (res.success === false || (typeof res.code === 'number' && res.code >= 400))) {
+    throw Object.assign(new Error(res.error), { status: typeof res.code === 'number' ? res.code : 400 })
+  }
+  return res
+}
+
 function text(v: unknown): string | undefined {
   return typeof v === 'string' && v ? v : undefined
 }
@@ -133,11 +145,12 @@ export async function GET() {
     const client = dapiClient()
     let raw: unknown
     try {
-      raw = await client.sessions.get(row.session_id)
+      raw = await call(client.sessions.get(row.session_id))
     } catch (err) {
       if ((err as { status?: number }).status === 404) {
+        // Gone on D-API's side (or never created): back to the connect form.
         await markDapiDisconnected(supabaseAdmin(), accountId)
-        return NextResponse.json({ enabled: true, configured: true, session: { status: 'disconnected' } })
+        return NextResponse.json({ enabled: true, configured: true, session: null })
       }
       throw err
     }
@@ -160,13 +173,13 @@ export async function GET() {
       const pairMode = state.connectionMode === 'pair' || status === 'pair_code_ready'
       try {
         if (pairMode) {
-          const pcRaw = await client.sessions.getPairCode(row.session_id)
+          const pcRaw = await call(client.sessions.getPairCode(row.session_id))
           await recordShape(row.session_id, 'debug:pair', pcRaw)
           const pc = unwrap(pcRaw)
           pairCode = text(pc.pairCode) ?? text(pc.code) ?? text(state.pairCode) ?? null
           if (pairCode) status = 'pair_code_ready'
         } else {
-          const qrRaw = await client.sessions.getQRCode(row.session_id)
+          const qrRaw = await call(client.sessions.getQRCode(row.session_id))
           await recordShape(row.session_id, 'debug:qr', qrRaw)
           qrImage = (await qrImageFrom(unwrap(qrRaw))) ?? (await qrImageFrom(state))
           if (qrImage) status = 'qr_ready'
@@ -215,7 +228,7 @@ export async function POST(request: Request) {
 
     // Already connected: nothing to start, just make sure it is saved.
     try {
-      const current = unwrap(await client.sessions.get(sessionId))
+      const current = unwrap(await call(client.sessions.get(sessionId)))
       if (normalizeStatus(current.status ?? current.state) === 'connected') {
         const syncError = await saveDapiConnection(supabaseAdmin(), {
           accountId,
@@ -226,7 +239,7 @@ export async function POST(request: Request) {
         return NextResponse.json({ session: { status: 'connected', phone: phoneDigits(text(current.phone)) }, sync_error: syncError })
       }
       // A half-finished pairing: start over with the chosen mode.
-      await client.sessions.delete(sessionId)
+      await call(client.sessions.delete(sessionId))
     } catch (err) {
       if ((err as { status?: number }).status !== 404) throw err
     }
@@ -264,6 +277,7 @@ export async function POST(request: Request) {
       historySync: false,
     })
     await recordShape(sessionId, 'debug:create', createdRaw)
+    await call(Promise.resolve(createdRaw))
     const created = unwrap(createdRaw)
     // Fresh session: always pairing, whatever word D-API used.
     const status = normalizeStatus(created.status)

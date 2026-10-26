@@ -2075,7 +2075,8 @@
       "pairSteps": "On the phone, open WhatsApp > Linked devices > Link a device > Link with phone number and type this code.",
       "notConfiguredTitle": "QR code connection unavailable",
       "notConfiguredDesc": "The server is missing DAPI_API_KEY. Contact the platform administrator.",
-      "adminOnly": "Only account admins can connect WhatsApp."
+      "adminOnly": "Only account admins can connect WhatsApp.",
+      "sessionLost": "The connection session expired. Click Generate QR code again."
     }
   },
   "SignupPage": {

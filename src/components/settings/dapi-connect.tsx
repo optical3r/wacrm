@@ -90,6 +90,12 @@ export function DapiConnect({
       }
       return;
     }
+    if (data && data.session === null) {
+      // The session no longer exists on D-API: show the connect form again.
+      stopPolling();
+      toast.error(t('sessionLost'));
+      return;
+    }
     const elapsed = Date.now() - pollStarted.current;
     if ((data?.session?.status === 'disconnected' && elapsed > START_GRACE_MS) || elapsed > POLL_LIMIT_MS) {
       stopPolling();
