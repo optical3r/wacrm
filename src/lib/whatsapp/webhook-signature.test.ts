@@ -157,6 +157,12 @@ describe("verifyCoexyWebhookSignature", () => {
     expect(verifyCoexyWebhookSignature(body, null)).toBe(false);
   });
 
+  it("accepts a secret stored by the connect flow", () => {
+    delete process.env.COEXY_HMAC_SECRET;
+    expect(verifyCoexyWebhookSignature(body, signedHeader(body, "stored"), ["stored"])).toBe(true);
+    expect(verifyCoexyWebhookSignature(body, signedHeader(body, "other"), ["stored"])).toBe(false);
+  });
+
   it("fails closed when COEXY_HMAC_SECRET is not set", () => {
     delete process.env.COEXY_HMAC_SECRET;
     expect(verifyCoexyWebhookSignature(body, signedHeader(body, "coexy-secret"))).toBe(false);

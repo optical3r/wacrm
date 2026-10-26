@@ -18,6 +18,7 @@ import {
   verifyMetaWebhookSignature,
 } from '@/lib/whatsapp/webhook-signature'
 import { isCoexy } from '@/lib/whatsapp/provider'
+import { loadCoexyWebhookSecrets } from '@/lib/whatsapp/coexy'
 import { resumeAwaitingReply, runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
@@ -228,7 +229,11 @@ export async function POST(request: Request) {
   // With Coexy as the relay the payload is Meta's, untouched, but the
   // signature comes in X-Coexy-Signature under COEXY_HMAC_SECRET.
   const verified = isCoexy()
-    ? verifyCoexyWebhookSignature(rawBody, request.headers.get('x-coexy-signature'))
+    ? verifyCoexyWebhookSignature(
+        rawBody,
+        request.headers.get('x-coexy-signature'),
+        await loadCoexyWebhookSecrets(supabaseAdmin()),
+      )
     : verifyMetaWebhookSignature(rawBody, request.headers.get('x-hub-signature-256'))
 
   if (!verified) {

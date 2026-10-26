@@ -24,6 +24,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { SettingsPanelHead } from './settings-panel-head';
+import { CoexyConnect, type CoexyState } from './coexy-connect';
 import {
   Accordion,
   AccordionItem,
@@ -97,6 +98,10 @@ export function WhatsAppConfig() {
   // tab regains focus. Without this, that churn calls fetchConfig()
   // again and overwrites whatever the user typed but hadn't saved yet.
   const loadedAccountIdRef = useRef<string | null>(null);
+  // Coexy installs (WHATSAPP_PROVIDER=coexy) replace the manual Meta
+  // credentials form with a single "Conectar" button. Null until the
+  // server says which mode it runs in.
+  const [coexy, setCoexy] = useState<CoexyState | null>(null);
 
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [wabaId, setWabaId] = useState('');
@@ -485,12 +490,28 @@ export function WhatsAppConfig() {
     }
   }
 
+  useEffect(() => {
+    if (authLoading || profileLoading || !user || !accountId) return;
+    let cancelled = false;
+    fetch('/api/whatsapp/coexy', { cache: 'no-store' })
+      .then((res) => res.json())
+      .then((data) => {
+        if (!cancelled) setCoexy(data?.enabled ? data : { enabled: false, channel: null });
+      })
+      .catch(() => {
+        if (!cancelled) setCoexy({ enabled: false, channel: null });
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [authLoading, profileLoading, user, accountId]);
+
   function handleCopyWebhookUrl() {
     navigator.clipboard.writeText(webhookUrl);
     toast.success(t('webhookCopied'));
   }
 
-  if (loading) {
+  if (loading || (user && accountId && coexy === null)) {
     return (
       <section className="animate-in fade-in-50 duration-200">
         <SettingsPanelHead
@@ -499,6 +520,23 @@ export function WhatsAppConfig() {
         />
         <div className="flex items-center justify-center py-12">
           <Loader2 className="size-6 animate-spin text-primary" />
+        </div>
+      </section>
+    );
+  }
+
+  if (coexy?.enabled) {
+    return (
+      <section className="animate-in fade-in-50 duration-200">
+        <SettingsPanelHead title={t("title")} description={t("description")} />
+        <div className="max-w-2xl">
+          <CoexyConnect
+            initial={coexy}
+            canEdit={canEditSettings}
+            onConnected={() => {
+              if (accountId) fetchConfig(accountId);
+            }}
+          />
         </div>
       </section>
     );

@@ -2024,6 +2024,27 @@
       "textPlaceholder": "The message text to insert",
       "cancel": "Cancel",
       "save": "Save"
+    },
+    "coexy": {
+      "title": "Connect WhatsApp",
+      "description": "Connect your business number to the official WhatsApp API through Coexy. No Meta developer account needed.",
+      "connect": "Connect",
+      "continue": "Continue connecting",
+      "reconnect": "Reconnect",
+      "checkAgain": "Check connection",
+      "connected": "WhatsApp connected",
+      "connectedToast": "WhatsApp connected.",
+      "waiting": "Waiting for you to finish in the window that opened…",
+      "howItWorks": "Connect opens Meta's official signup. Log in with the business Facebook account, pick the number (it can be the one already on WhatsApp Business) and confirm. This page updates by itself when you're done.",
+      "disconnectedTitle": "Connection lost",
+      "disconnectedDesc": "Meta revoked access for this number (for example a password change or removed permission). Click Reconnect; contacts, conversations and settings are kept.",
+      "suspendedTitle": "Channel suspended",
+      "suspendedDesc": "This channel was suspended in Coexy. Contact Coexy support to reactivate it.",
+      "notConfiguredTitle": "Coexy not configured",
+      "notConfiguredDesc": "COEXY_API_KEY is missing on the server. Add your Coexy API key to the environment variables and redeploy.",
+      "adminOnly": "Only account admins can connect WhatsApp.",
+      "noConnectUrl": "Coexy did not return a connect link.",
+      "connectFailed": "Could not start the connection."
     }
   },
   "SignupPage": {

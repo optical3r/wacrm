@@ -84,20 +84,20 @@ export function verifyMetaWebhookSignature(
  *
  * Coexy signs the raw body with the `hmac_secret` returned when the
  * webhook was created and sends `X-Coexy-Signature: sha256=<hex>` —
- * same scheme as Meta, different header and secret. Fails closed when
- * COEXY_HMAC_SECRET is missing. Accepts a comma-separated list so the
- * secret can be rotated (create the new webhook, add its secret, then
- * delete the old one).
+ * same scheme as Meta, different header and secret. Valid secrets are
+ * COEXY_HMAC_SECRET (comma-separated, for a webhook created by hand)
+ * plus `storedSecrets`, the ones saved when the "Conectar" flow created
+ * the webhook. Fails closed when there are none.
  */
 export function verifyCoexyWebhookSignature(
   rawBody: string,
   signatureHeader: string | null,
+  storedSecrets: string[] = [],
 ): boolean {
-  const secrets = parseAppSecrets(process.env.COEXY_HMAC_SECRET)
+  const secrets = [...parseAppSecrets(process.env.COEXY_HMAC_SECRET), ...storedSecrets]
   if (secrets.length === 0) {
     console.error(
-      '[webhook] COEXY_HMAC_SECRET is not set — rejecting request. ' +
-        'Use the hmac_secret returned when the Coexy webhook was created.',
+      '[webhook] no Coexy webhook secret (COEXY_HMAC_SECRET or a connected channel) — rejecting request.',
     )
     return false
   }
