@@ -61,8 +61,12 @@ function unwrap(res: unknown): Obj {
  */
 async function call<T>(p: Promise<T>): Promise<T> {
   const res = await p
-  if (isObj(res) && typeof res.error === 'string' && (res.success === false || (typeof res.code === 'number' && res.code >= 400))) {
-    throw Object.assign(new Error(res.error), { status: typeof res.code === 'number' ? res.code : 400 })
+  if (isObj(res) && typeof res.error === 'string' && res.success !== true && !('status' in res)) {
+    const details = typeof res.details === 'string' ? res.details : typeof res.message === 'string' ? res.message : ''
+    console.error('[dapi] error body:', res.error, details)
+    throw Object.assign(new Error(details ? `${res.error}: ${details}` : res.error), {
+      status: typeof res.code === 'number' ? res.code : 400,
+    })
   }
   return res
 }
@@ -101,7 +105,16 @@ function shapeOf(v: unknown, depth = 0): unknown {
   if (Array.isArray(v)) return v.slice(0, 2).map((x) => shapeOf(x, depth + 1))
   if (!isObj(v)) return typeof v === 'string' ? (v.length > 24 ? `<string ${v.length}>` : v) : v
   if (depth > 3) return '<object>'
-  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, /qr|pair|token|key/i.test(k) ? `<${typeof x}>` : shapeOf(x, depth + 1)]))
+  return Object.fromEntries(
+    Object.entries(v).map(([k, x]) => [
+      k,
+      /qr|pair|token|key/i.test(k)
+        ? `<${typeof x}>`
+        : /^(error|details|message|status|state)$/i.test(k) && typeof x === 'string'
+          ? x.slice(0, 300)
+          : shapeOf(x, depth + 1),
+    ]),
+  )
 }
 
 async function recordShape(sessionId: string, event: string, res: unknown) {
