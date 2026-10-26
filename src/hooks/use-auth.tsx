@@ -43,6 +43,10 @@ interface AccountSummary {
   /** Default deal currency (ISO-4217). NOT NULL DEFAULT 'USD' in the
    *  DB (migration 021); narrowed to DEFAULT_CURRENCY when absent. */
   default_currency: string;
+  /** SaaS plan (migration 048). 'pro' on schemas before 048. */
+  plan: "starter" | "pro";
+  /** Signup approval (migration 048). 'active' on schemas before 048. */
+  status: "pending" | "active" | "blocked";
 }
 
 /**
@@ -239,7 +243,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             .from("accounts")
             // default_currency added in migration 021; narrowed to the
             // USD fallback below for older schemas where it reads null.
-            .select("id, name, default_currency")
+            .select("*")
             .eq("id", data.account_id)
             .maybeSingle();
           if (accountErr) {
@@ -254,6 +258,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
               id: account.id,
               name: account.name,
               default_currency: account.default_currency ?? DEFAULT_CURRENCY,
+              plan: account.plan === "starter" ? "starter" : "pro",
+              status:
+                account.status === "pending" || account.status === "blocked"
+                  ? account.status
+                  : "active",
             };
           }
         }

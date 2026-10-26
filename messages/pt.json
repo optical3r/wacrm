@@ -41,7 +41,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configurações",
-    "menuSignOut": "Sair"
+    "menuSignOut": "Sair",
+    "admin": "Admin"
   },
   "Header": {
     "dashboard": "Painel",
@@ -2364,7 +2365,9 @@
         "admin": "Administrador",
         "agent": "Agente",
         "viewer": "Visualizador"
-      }
+      },
+      "accountPending": "Seu cadastro ainda está em análise.",
+      "accountBlocked": "O acesso desta organização está suspenso."
     },
     "rateLimitExceeded": "Limite de requisições excedido",
     "send": {
@@ -2736,5 +2739,103 @@
       "metaApiStatus": "Erro da API da Meta: {status}",
       "syncFailed": "Falha ao sincronizar os modelos"
     }
+  },
+  "Admin": {
+    "title": "Painel do LabCRM",
+    "subtitle": "Todas as organizações, aprovação de cadastros e planos.",
+    "refresh": "Atualizar",
+    "forbidden": "Esta área é só do dono da plataforma.",
+    "loadFailed": "Não foi possível carregar as organizações.",
+    "saveFailed": "Não foi possível salvar.",
+    "empty": "Nenhuma organização encontrada.",
+    "search": "Buscar por nome ou e-mail",
+    "cancel": "Cancelar",
+    "confirmButton": "Confirmar",
+    "usage": "{conversations} conversas · {messages} mensagens",
+    "createdAt": "Cadastro: {date}",
+    "lastActivity": "Última mensagem: {date}",
+    "totals": {
+      "pending": "Pendentes",
+      "active": "Ativas",
+      "blocked": "Bloqueadas",
+      "starter": "Starter ativas",
+      "pro": "Pro ativas",
+      "connected": "WhatsApp conectados"
+    },
+    "filters": {
+      "all": "Todas",
+      "pending": "Pendentes",
+      "active": "Ativas",
+      "blocked": "Bloqueadas",
+      "allPlans": "Todos os planos"
+    },
+    "status": {
+      "pending": "Pendente",
+      "active": "Ativa",
+      "blocked": "Bloqueada"
+    },
+    "plan": {
+      "starter": "Starter",
+      "pro": "Pro"
+    },
+    "whatsapp": {
+      "connected": "Conectado",
+      "disconnected": "Desconectado",
+      "none": "Não conectado"
+    },
+    "cols": {
+      "organization": "Organização",
+      "status": "Status",
+      "plan": "Plano",
+      "whatsapp": "WhatsApp",
+      "team": "Equipe",
+      "usage": "Uso (30 dias)",
+      "dates": "Datas",
+      "actions": "Ações"
+    },
+    "actions": {
+      "approveStarter": "Aprovar Starter",
+      "approvePro": "Aprovar Pro",
+      "reject": "Recusar",
+      "block": "Bloquear",
+      "unblock": "Desbloquear",
+      "toStarter": "Mudar para Starter",
+      "toPro": "Mudar para Pro",
+      "disconnect": "Desconectar WhatsApp"
+    },
+    "done": {
+      "approve": "{name} aprovada.",
+      "reject": "{name} recusada.",
+      "block": "{name} bloqueada.",
+      "unblock": "{name} desbloqueada.",
+      "set_plan": "Plano de {name} alterado.",
+      "disconnect_whatsapp": "WhatsApp de {name} desconectado."
+    },
+    "confirm": {
+      "reject": {
+        "title": "Recusar {name}?",
+        "desc": "A organização fica bloqueada e não consegue usar o LabCRM. Você pode desbloquear depois."
+      },
+      "block": {
+        "title": "Bloquear {name}?",
+        "desc": "A equipe perde o acesso e as mensagens recebidas deixam de entrar na caixa de entrada. Os dados ficam guardados."
+      },
+      "set_plan": {
+        "title": "Trocar o plano de {name}?",
+        "desc": "O WhatsApp atual é desconectado, porque Starter e Pro conectam de formas diferentes. O histórico de conversas fica."
+      },
+      "disconnect_whatsapp": {
+        "title": "Desconectar o WhatsApp de {name}?",
+        "desc": "O número para de enviar e receber até a organização conectar de novo."
+      }
+    }
+  },
+  "AccountStatusGate": {
+    "pendingTitle": "Cadastro em análise",
+    "pendingDesc": "Recebemos seu cadastro no LabCRM. Assim que ele for aprovado, você terá acesso ao sistema.",
+    "blockedTitle": "Acesso suspenso",
+    "blockedDesc": "O acesso desta organização ao LabCRM está suspenso. Fale com a Cerqueira Labs para mais informações.",
+    "signedInAs": "Conectado como {email}",
+    "signOut": "Sair"
   }
 }

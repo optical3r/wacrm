@@ -32,6 +32,9 @@ import { createClient } from "@/lib/supabase/server";
 import { hasMinRole, isAccountRole, type AccountRole } from "./roles";
 import { getT } from "@/lib/i18n/translate";
 
+/** SaaS plan (migration 048): how the account connects to WhatsApp. */
+export type AccountPlan = "starter" | "pro";
+
 const t = getT("LibErrors.auth");
 
 // ------------------------------------------------------------
@@ -90,8 +93,8 @@ export interface AccountContext {
   accountId: string;
   /** Caller's role within their account. */
   role: AccountRole;
-  /** Lightweight account meta — id + name. */
-  account: { id: string; name: string };
+  /** Lightweight account meta — id + name + SaaS plan. */
+  account: { id: string; name: string; plan: AccountPlan };
 }
 
 /**
@@ -152,7 +155,7 @@ export async function getCurrentAccount(): Promise<AccountContext> {
   // RLS, so it stays robust against cache staleness and older schemas.
   const { data: account, error: accountErr } = await supabase
     .from("accounts")
-    .select("id, name")
+    .select("id, name, plan, status")
     .eq("id", data.account_id)
     .maybeSingle();
 
@@ -166,12 +169,25 @@ export async function getCurrentAccount(): Promise<AccountContext> {
     throw new ForbiddenError(t("notLinked"));
   }
 
+  // Signup approval (migration 048): only active accounts use the app.
+  // Undefined status = schema before 048, treated as active.
+  if (account.status === "pending") {
+    throw new ForbiddenError(t("accountPending"));
+  }
+  if (account.status === "blocked") {
+    throw new ForbiddenError(t("accountBlocked"));
+  }
+
   return {
     supabase,
     userId: user.id,
     accountId: data.account_id,
     role: data.account_role,
-    account: { id: account.id, name: account.name },
+    account: {
+      id: account.id,
+      name: account.name,
+      plan: account.plan === "starter" ? "starter" : "pro",
+    },
   };
 }
 

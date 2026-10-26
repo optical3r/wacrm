@@ -212,6 +212,16 @@ vi.mock('@supabase/supabase-js', () => ({
               }
             },
           }
+        case 'accounts':
+          // isAccountActive (migration 048): every test account is active.
+          return {
+            select: () => ({
+              eq: () => ({
+                maybeSingle: () =>
+                  Promise.resolve({ data: { status: 'active' }, error: null }),
+              }),
+            }),
+          }
         default:
           throw new Error(`unexpected table: ${table}`)
       }

@@ -7,6 +7,7 @@ import { AuthProvider, useAuth } from "@/hooks/use-auth";
 import { Sidebar } from "@/components/layout/sidebar";
 import { Header } from "@/components/layout/header";
 import { AccountAccessAlert } from "@/components/layout/account-access-alert";
+import { AccountStatusGate } from "@/components/layout/account-status-gate";
 import { PresenceHeartbeat } from "@/components/presence/presence-heartbeat";
 import { BrowserNotificationsListener } from "@/components/notifications/browser-notifications-listener";
 
@@ -15,7 +16,7 @@ import { BrowserNotificationsListener } from "@/components/notifications/browser
 // client components can't export Next's metadata object.
 
 function DashboardShellInner({ children }: { children: React.ReactNode }) {
-  const { user, loading } = useAuth();
+  const { user, loading, account, profile, signOut } = useAuth();
   const router = useRouter();
   const t = useTranslations("DashboardShell");
 
@@ -42,6 +43,18 @@ function DashboardShellInner({ children }: { children: React.ReactNode }) {
   }
 
   if (!user) return null;
+
+  // New signups wait for the platform owner's approval; blocked
+  // organizations lose access (migration 048). RLS enforces the same.
+  if (account && account.status !== "active") {
+    return (
+      <AccountStatusGate
+        status={account.status}
+        email={profile?.email ?? user.email ?? null}
+        onSignOut={signOut}
+      />
+    );
+  }
 
   return (
     <div className="flex h-screen overflow-hidden bg-background">

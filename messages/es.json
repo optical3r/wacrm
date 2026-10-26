@@ -41,7 +41,8 @@
     "defaultAvatar": "Avatar",
     "menuProfile": "Perfil",
     "menuSettings": "Configuración",
-    "menuSignOut": "Cerrar sesión"
+    "menuSignOut": "Cerrar sesión",
+    "admin": "Admin"
   },
   "Header": {
     "dashboard": "Panel",
@@ -2364,7 +2365,9 @@
         "admin": "Administrador",
         "agent": "Agente",
         "viewer": "Observador"
-      }
+      },
+      "accountPending": "Your signup is still under review.",
+      "accountBlocked": "This organization's access is suspended."
     },
     "rateLimitExceeded": "Se superó el límite de solicitudes",
     "send": {
@@ -2736,5 +2739,103 @@
       "metaApiStatus": "Error de la API de Meta: {status}",
       "syncFailed": "Error al sincronizar las plantillas"
     }
+  },
+  "Admin": {
+    "title": "LabCRM admin",
+    "subtitle": "Every organization, signup approval and plans.",
+    "refresh": "Refresh",
+    "forbidden": "This area is for the platform owner only.",
+    "loadFailed": "Could not load organizations.",
+    "saveFailed": "Could not save.",
+    "empty": "No organizations found.",
+    "search": "Search by name or e-mail",
+    "cancel": "Cancel",
+    "confirmButton": "Confirm",
+    "usage": "{conversations} conversations · {messages} messages",
+    "createdAt": "Signed up: {date}",
+    "lastActivity": "Last message: {date}",
+    "totals": {
+      "pending": "Pending",
+      "active": "Active",
+      "blocked": "Blocked",
+      "starter": "Active Starter",
+      "pro": "Active Pro",
+      "connected": "WhatsApp connected"
+    },
+    "filters": {
+      "all": "All",
+      "pending": "Pending",
+      "active": "Active",
+      "blocked": "Blocked",
+      "allPlans": "All plans"
+    },
+    "status": {
+      "pending": "Pending",
+      "active": "Active",
+      "blocked": "Blocked"
+    },
+    "plan": {
+      "starter": "Starter",
+      "pro": "Pro"
+    },
+    "whatsapp": {
+      "connected": "Connected",
+      "disconnected": "Disconnected",
+      "none": "Not connected"
+    },
+    "cols": {
+      "organization": "Organization",
+      "status": "Status",
+      "plan": "Plan",
+      "whatsapp": "WhatsApp",
+      "team": "Team",
+      "usage": "Usage (30 days)",
+      "dates": "Dates",
+      "actions": "Actions"
+    },
+    "actions": {
+      "approveStarter": "Approve Starter",
+      "approvePro": "Approve Pro",
+      "reject": "Reject",
+      "block": "Block",
+      "unblock": "Unblock",
+      "toStarter": "Switch to Starter",
+      "toPro": "Switch to Pro",
+      "disconnect": "Disconnect WhatsApp"
+    },
+    "done": {
+      "approve": "{name} approved.",
+      "reject": "{name} rejected.",
+      "block": "{name} blocked.",
+      "unblock": "{name} unblocked.",
+      "set_plan": "{name}'s plan changed.",
+      "disconnect_whatsapp": "{name}'s WhatsApp disconnected."
+    },
+    "confirm": {
+      "reject": {
+        "title": "Reject {name}?",
+        "desc": "The organization is blocked and cannot use LabCRM. You can unblock it later."
+      },
+      "block": {
+        "title": "Block {name}?",
+        "desc": "The team loses access and incoming messages stop reaching the inbox. Data is kept."
+      },
+      "set_plan": {
+        "title": "Change {name}'s plan?",
+        "desc": "The current WhatsApp is disconnected, since Starter and Pro connect differently. Conversation history is kept."
+      },
+      "disconnect_whatsapp": {
+        "title": "Disconnect {name}'s WhatsApp?",
+        "desc": "The number stops sending and receiving until the organization connects again."
+      }
+    }
+  },
+  "AccountStatusGate": {
+    "pendingTitle": "Signup under review",
+    "pendingDesc": "We received your LabCRM signup. You will get access as soon as it is approved.",
+    "blockedTitle": "Access suspended",
+    "blockedDesc": "This organization's access to LabCRM is suspended. Contact Cerqueira Labs for details.",
+    "signedInAs": "Signed in as {email}",
+    "signOut": "Sign out"
   }
 }

@@ -8,6 +8,7 @@ import { LabCrmMark } from "@/components/brand/labcrm-mark";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
+import { useIsSuperAdmin } from "@/hooks/use-is-super-admin";
 import {
   Bell,
   Bot,
@@ -26,6 +27,7 @@ import {
   Workflow,
   X,
   Zap,
+  ShieldCheck,
 } from "lucide-react";
 import type { AccountRole } from "@/lib/auth/roles";
 
@@ -106,6 +108,10 @@ const bottomNavItems = [
   { href: "/settings", labelKey: "settings", icon: Settings },
 ];
 
+// Platform owner only (SUPER_ADMIN_EMAILS): every organization, plans,
+// signup approval.
+const superAdminNavItem = { href: "/admin", labelKey: "admin", icon: ShieldCheck };
+
 interface SidebarProps {
   /** Controlled on mobile by the Header's hamburger button. Ignored on lg+. */
   open?: boolean;
@@ -120,6 +126,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
   const { profile, profileLoading, account, accountRole, signOut } = useAuth();
   const totalUnread = useTotalUnread();
   const unreadNotifications = useUnreadNotifications();
+  const isSuperAdmin = useIsSuperAdmin();
   // Only surface the account-name strip when it actually carries
   // information. A solo user's personal account is named after them
   // (the 017 signup trigger seeds it from `full_name`), so showing it
@@ -270,7 +277,7 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
           <div className="my-4 border-t border-border" />
 
           <ul className="flex flex-col gap-1">
-            {bottomNavItems.map((item) => {
+            {(isSuperAdmin ? [...bottomNavItems, superAdminNavItem] : bottomNavItems).map((item) => {
               const isActive = pathname.startsWith(item.href);
               return (
                 <li key={item.href}>

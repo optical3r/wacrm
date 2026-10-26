@@ -360,6 +360,11 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
 
       const config = configRows[0]
 
+      if (!(await isAccountActive(config.account_id))) {
+        console.warn('[webhook] account not active, inbound dropped:', config.account_id)
+        continue
+      }
+
       const decryptedAccessToken = decrypt(config.access_token)
 
       for (let i = 0; i < value.messages.length; i++) {
@@ -387,6 +392,21 @@ async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
   }
 }
 
+/** Pending or blocked organizations (see migration 048) get no inbox traffic. */
+async function isAccountActive(accountId: string): Promise<boolean> {
+  const { data, error } = await supabaseAdmin()
+    .from('accounts')
+    .select('status')
+    .eq('id', accountId)
+    .maybeSingle()
+  if (error) {
+    // Fail open: a lookup error must not drop customer messages.
+    console.error('[webhook] account status lookup failed:', error.message)
+    return true
+  }
+  return !data || !data.status || data.status === 'active'
+}
+
 interface MessageEchoesValue {
   metadata?: { phone_number_id?: string }
   /** Same shape as an inbound message, but `from` is the business and `to` the customer. */
@@ -406,6 +426,7 @@ async function handleMessageEchoes(value: MessageEchoesValue) {
     return
   }
   const config = configRows[0]
+  if (!(await isAccountActive(config.account_id))) return
   const accessToken = decrypt(config.access_token)
 
   for (const echo of value.message_echoes) {
