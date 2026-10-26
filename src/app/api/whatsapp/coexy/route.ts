@@ -168,7 +168,7 @@ export async function POST(request: Request) {
     }
 
     if (!channel) {
-      channel = await createCoexyChannel(account.name || 'WACRM')
+      channel = await createCoexyChannel(account.name || 'LabCRM')
       const { error } = await admin.from('coexy_channels').insert({
         account_id: accountId,
         channel_id: channel.id,

@@ -17,7 +17,7 @@
     "linkInvalid": "이 링크로는 로그인할 수 없습니다. 이메일 인증 중이었다면 이미 인증이 완료되었을 수 있으니 아래에서 로그인하세요. 비밀번호 재설정은 새 링크를 요청한 뒤 요청한 브라우저에서 열어 주세요."
   },
   "Sidebar": {
-    "title": "WhatsApp용 CRM 템플릿",
+    "title": "LabCRM",
     "primaryNav": "기본 메뉴",
     "dashboard": "대시보드",
     "inbox": "인박스",
@@ -1487,7 +1487,7 @@
       "done": "완료",
       "dialogTitle": "팀원 초대",
       "networkError": "서버에 연결할 수 없습니다. 다시 시도할까요?",
-      "fallbackAccountName": "우리 wacrm 계정",
+      "fallbackAccountName": "우리 LabCRM 계정",
       "dialogDesc": "일회용 초대 링크를 생성합니다. WhatsApp, Slack 등 원하는 채널로 공유하세요 — 이메일 서비스가 필요하지 않습니다.",
       "roleLabel": "역할",
       "validForLabel": "링크 유효 기간",
@@ -2228,7 +2228,7 @@
     }
   },
   "Metadata": {
-    "description": "직접 호스팅할 수 있는 WhatsApp용 CRM 템플릿입니다."
+    "description": "Cerqueira Labs의 WhatsApp CRM."
   },
   "Currency": {
     "USD": "미국 달러",
@@ -2681,7 +2681,7 @@
       "wabaIdDigits": "WhatsApp Business Account ID는 숫자만 포함해야 합니다 — Meta → WhatsApp → API Setup에서 복사하세요.",
       "pinDigits": "PIN은 정확히 6자리여야 합니다.",
       "validateFailed": "설정을 검증하지 못했습니다",
-      "numberLinkedElsewhere": "이 WhatsApp 전화번호는 이미 이 인스턴스의 다른 계정에 연결되어 있습니다. 각 전화번호는 하나의 wacrm 사용자에만 연결할 수 있습니다.",
+      "numberLinkedElsewhere": "이 WhatsApp 전화번호는 이미 이 인스턴스의 다른 계정에 연결되어 있습니다. 각 전화번호는 하나의 LabCRM 사용자에만 연결할 수 있습니다.",
       "encryptFailed": "토큰을 암호화하지 못했습니다. 환경 변수의 ENCRYPTION_KEY가 유효한 64자 16진수 문자열인지 확인하세요.",
       "updateFailed": "설정을 업데이트하지 못했습니다",
       "saveFailed": "설정을 저장하지 못했습니다",

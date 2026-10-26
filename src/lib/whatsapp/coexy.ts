@@ -121,7 +121,7 @@ export async function ensureCoexyWebhook(admin: SupabaseClient, webhookUrl: stri
   if (existing && existing.length > 0) return
 
   const webhook = await coexyRequest<CoexyWebhook>('POST', '/webhooks', {
-    name: 'WACRM',
+    name: 'LabCRM',
     url: webhookUrl,
     events: COEXY_WEBHOOK_EVENTS,
   })
