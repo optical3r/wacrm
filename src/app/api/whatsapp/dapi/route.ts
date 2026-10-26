@@ -236,26 +236,35 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Informe o número com DDI e DDD, ex.: 5571999999999.' }, { status: 400 })
     }
 
-    const sessionId = dapiSessionIdFor(accountId)
     const client = dapiClient()
+    const { data: previous } = await supabaseAdmin()
+      .from('dapi_sessions')
+      .select('session_id')
+      .eq('account_id', accountId)
+      .maybeSingle()
 
-    // Already connected: nothing to start, just make sure it is saved.
-    try {
-      const current = unwrap(await call(client.sessions.get(sessionId)))
-      if (normalizeStatus(current.status ?? current.state) === 'connected') {
-        const syncError = await saveDapiConnection(supabaseAdmin(), {
-          accountId,
-          userId,
-          sessionId,
-          phone: phoneDigits(text(current.phone)),
-        })
-        return NextResponse.json({ session: { status: 'connected', phone: phoneDigits(text(current.phone)) }, sync_error: syncError })
+    if (previous) {
+      try {
+        const current = unwrap(await call(client.sessions.get(previous.session_id)))
+        // Already connected: nothing to start, just make sure it is saved.
+        if (normalizeStatus(current.status ?? current.state) === 'connected') {
+          const phone = phoneDigits(text(current.phone))
+          const syncError = await saveDapiConnection(supabaseAdmin(), {
+            accountId,
+            userId,
+            sessionId: previous.session_id,
+            phone,
+          })
+          return NextResponse.json({ session: { status: 'connected', phone }, sync_error: syncError })
+        }
+        // A half-finished pairing: drop it and start over.
+        await call(client.sessions.delete(previous.session_id))
+      } catch (err) {
+        if ((err as { status?: number }).status !== 404) throw err
       }
-      // A half-finished pairing: start over with the chosen mode.
-      await call(client.sessions.delete(sessionId))
-    } catch (err) {
-      if ((err as { status?: number }).status !== 404) throw err
     }
+
+    const sessionId = dapiSessionIdFor(accountId)
 
     // A fresh secret per session; only its hash is stored.
     const token = randomBytes(24).toString('base64url')

@@ -48,9 +48,14 @@ export function sessionIdFrom(phoneNumberId: string): string {
   return phoneNumberId.slice(DAPI_PHONE_PREFIX.length)
 }
 
-/** One session per organization. */
+/**
+ * One live session per organization, with a fresh id on every new
+ * pairing: D-API keeps ids of deleted sessions reserved, so reusing one
+ * fails with a duplicate-key error. The account id stays in the prefix
+ * (migration 050 checks it).
+ */
 export function dapiSessionIdFor(accountId: string): string {
-  return `labcrm-${accountId}`
+  return `labcrm-${accountId}-${Date.now().toString(36)}`
 }
 
 /** Digits only: D-API addresses contacts by phone number. */
