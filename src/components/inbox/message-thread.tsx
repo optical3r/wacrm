@@ -169,7 +169,9 @@ export function MessageThread({
   const tTimer = useTranslations("Inbox.sessionTimer");
   const tQuote = useTranslations("Inbox.replyQuote");
 
-  const { user } = useAuth();
+  const { user, account } = useAuth();
+  // Starter (QR code via D-API) has no Meta 24h service window.
+  const noServiceWindow = account?.plan === "starter";
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -234,7 +236,7 @@ export function MessageThread({
 
   // 24-hour session timer
   const sessionInfo = useMemo(() => {
-    if (!messages.length) return { expired: false, remaining: "" };
+    if (noServiceWindow || !messages.length) return { expired: false, remaining: "" };
 
     // Find last customer message
     const lastCustomerMsg = [...messages]
@@ -257,7 +259,7 @@ export function MessageThread({
         : tTimer("xmRemaining", { minutes: Math.floor(hoursLeft * 60) });
 
     return { expired, remaining };
-  }, [messages, tTimer]);
+  }, [messages, tTimer, noServiceWindow]);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
@@ -929,7 +931,7 @@ export function MessageThread({
           </div>
           {/* Session timer badge — hidden on the narrowest phones so
               the name + back arrow keep their room. */}
-          <Badge
+          {sessionInfo.remaining && <Badge
             variant="outline"
             className={cn(
               "ml-1 hidden gap-1 border-border text-[10px] sm:inline-flex sm:ml-2",
@@ -938,7 +940,7 @@ export function MessageThread({
           >
             <Clock className="h-3 w-3" />
             {sessionInfo.remaining}
-          </Badge>
+          </Badge>}
         </div>
 
         <div className="flex items-center gap-2">

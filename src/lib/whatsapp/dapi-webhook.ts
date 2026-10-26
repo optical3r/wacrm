@@ -315,7 +315,7 @@ function normalizeReceipts(raw: Obj, event: string): MetaStatus[] {
   const key = g(raw, 'key')
   const update = g(raw, 'update')
   const jidOf = (v: unknown) => str(v) ?? str(g(v, 'jid', 'id'))
-  const chat = jidOf(g(key, 'remoteJid') ?? g(raw, 'chat', 'chatId', 'Chat', 'remoteJid', 'to', 'recipient', 'from')) ?? ''
+  const chat = jidOf(g(key, 'remoteJid') ?? g(raw, 'remote_jid', 'chat', 'chatId', 'Chat', 'remoteJid', 'to', 'recipient', 'from')) ?? ''
   const status =
     receiptStatus(g(update, 'status')) ??
     receiptStatus(g(raw, 'status', 'ack', 'type', 'receiptType', 'Type')) ??
@@ -323,7 +323,7 @@ function normalizeReceipts(raw: Obj, event: string): MetaStatus[] {
   if (!status) return out
 
   const ids = g(raw, 'messageIds', 'MessageIDs', 'ids')
-  const list = Array.isArray(ids) ? ids.map(str).filter(Boolean) as string[] : [str(g(key, 'id') ?? g(raw, 'messageId', 'id', 'ID'))].filter(Boolean) as string[]
+  const list = Array.isArray(ids) ? ids.map(str).filter(Boolean) as string[] : [str(g(key, 'id') ?? g(raw, 'message_id', 'messageId', 'id', 'ID'))].filter(Boolean) as string[]
   const timestamp = seconds(g(raw, 'timestamp', 'Timestamp', 'messageTimestamp'))
   for (const id of list) out.push({ id, status, timestamp, recipient_id: digits(chat) })
   return out
