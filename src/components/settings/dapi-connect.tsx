@@ -42,7 +42,8 @@ export function DapiConnect({
 }: {
   initial: DapiState;
   canEdit: boolean;
-  onConnected: () => void;
+  /** Gets the latest state, so a remount (the parent reloads) starts from it. */
+  onConnected: (state: DapiState) => void;
 }) {
   const t = useTranslations('Settings.dapi');
   const [state, setState] = useState<DapiState>(initial);
@@ -53,12 +54,15 @@ export function DapiConnect({
   const [waiting, setWaiting] = useState(false);
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollStarted = useRef(0);
+  const polling = useRef(false);
 
   const status = state.session?.status ?? null;
   const connected = status === 'connected' && !state.sync_error;
   // While polling, keep the pairing panel up even if D-API briefly reports
   // the new session as disconnected (it is still starting).
-  const pairing = waiting || status === 'connecting' || status === 'qr_ready' || status === 'pair_code_ready';
+  const pairing =
+    status !== 'connected' &&
+    (waiting || status === 'connecting' || status === 'qr_ready' || status === 'pair_code_ready');
 
   const refresh = useCallback(async (): Promise<DapiState | null> => {
     try {
@@ -74,19 +78,22 @@ export function DapiConnect({
   }, []);
 
   const stopPolling = useCallback(() => {
+    polling.current = false;
     if (pollTimer.current) clearTimeout(pollTimer.current);
     pollTimer.current = null;
     setWaiting(false);
   }, []);
 
   const poll = useCallback(async () => {
+    if (!polling.current) return;
     const data = await refresh();
+    if (!polling.current) return;
     if (data?.session?.status === 'connected') {
       stopPolling();
       if (data.sync_error) toast.error(data.sync_error);
       else {
         toast.success(t('connectedToast'));
-        onConnected();
+        onConnected(data);
       }
       return;
     }
@@ -106,6 +113,7 @@ export function DapiConnect({
 
   const startPolling = useCallback(() => {
     if (pollTimer.current) clearTimeout(pollTimer.current);
+    polling.current = true;
     pollStarted.current = Date.now();
     setWaiting(true);
     pollTimer.current = setTimeout(poll, 1000);
@@ -116,6 +124,7 @@ export function DapiConnect({
     const s = initial.session?.status;
     if (canEdit && (s === 'connecting' || s === 'qr_ready' || s === 'pair_code_ready')) startPolling();
     return () => {
+      polling.current = false;
       if (pollTimer.current) clearTimeout(pollTimer.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -133,7 +142,7 @@ export function DapiConnect({
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setState((prev) => ({ ...prev, session: data.session, sync_error: data.sync_error }));
       if (data.session?.status === 'connected') {
-        if (!data.sync_error) onConnected();
+        if (!data.sync_error) onConnected({ ...state, session: data.session, sync_error: null });
         return;
       }
       startPolling();
@@ -152,9 +161,10 @@ export function DapiConnect({
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       stopPolling();
-      setState((prev) => ({ ...prev, session: { status: 'disconnected' }, sync_error: null }));
+      const next: DapiState = { ...state, session: { status: 'disconnected' }, sync_error: null };
+      setState(next);
       toast.success(t('disconnectedToast'));
-      onConnected();
+      onConnected(next);
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('disconnectFailed'));
     } finally {

@@ -175,7 +175,11 @@ export async function GET() {
     let syncError: string | null = null
     let qrImage: string | null = null
     let pairCode: string | null = null
-    const phone = phoneDigits(text(state.phone) ?? text(state.phoneNumber) ?? text(state.wid)) ?? row.phone ?? null
+    const auth = isObj(state.authData) ? state.authData : {}
+    const phone =
+      phoneDigits(text(state.phone) ?? text(auth.phone) ?? text(auth.jid) ?? text(state.phoneNumber) ?? text(state.wid)) ??
+      row.phone ??
+      null
 
     if (status === 'connected') {
       syncError = await saveDapiConnection(supabaseAdmin(), { accountId, userId, sessionId: row.session_id, phone })

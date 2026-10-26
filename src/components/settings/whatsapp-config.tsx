@@ -552,7 +552,10 @@ export function WhatsAppConfig() {
           <DapiConnect
             initial={dapi}
             canEdit={canEditSettings}
-            onConnected={() => {
+            onConnected={(latest) => {
+              // The reload below may remount this card: start it from the
+              // latest state, not the QR it was first given.
+              setDapi(latest);
               if (accountId) fetchConfig(accountId);
             }}
           />
