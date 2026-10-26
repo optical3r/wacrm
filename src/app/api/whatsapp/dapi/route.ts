@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createHash, randomBytes } from 'node:crypto'
 import { createClient as createAdminClient, type SupabaseClient } from '@supabase/supabase-js'
+import QRCode from 'qrcode'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { hasMinRole } from '@/lib/auth/roles'
 import { markDapiDisconnected, saveDapiConnection } from '@/lib/whatsapp/dapi-connection'
@@ -39,17 +40,63 @@ function supabaseAdmin() {
 
 const STARTER_ONLY = 'A conexão por QR code é exclusiva do plano Starter.'
 
-/** D-API answers either the object itself or `{ data: object }`. */
-function unwrap<T>(res: unknown): T {
-  const r = (res ?? {}) as Record<string, unknown>
-  return (r.data && typeof r.data === 'object' ? r.data : r) as T
+type Obj = Record<string, unknown>
+const isObj = (v: unknown): v is Obj => typeof v === 'object' && v !== null && !Array.isArray(v)
+
+/** D-API answers the object itself, `{ data }`, `{ session }` or `{ data: { session } }`. */
+function unwrap(res: unknown): Obj {
+  let r: unknown = res
+  for (let i = 0; i < 3; i++) {
+    if (!isObj(r)) return {}
+    const inner = isObj(r.data) ? r.data : isObj(r.session) ? r.session : null
+    if (!inner || 'status' in r) break
+    r = inner
+  }
+  return isObj(r) ? r : {}
 }
 
-interface SessionState {
-  status: string
-  phone?: string
-  qrCodeImage?: string
-  pairCode?: string
+function text(v: unknown): string | undefined {
+  return typeof v === 'string' && v ? v : undefined
+}
+
+type Status = 'connecting' | 'connected' | 'disconnected' | 'qr_ready' | 'pair_code_ready'
+
+/** Map whatever status word D-API uses onto the five the UI knows. */
+function normalizeStatus(raw: unknown): Status {
+  const s = String(raw ?? '').toLowerCase()
+  if (/qr/.test(s)) return 'qr_ready'
+  if (/pair/.test(s)) return 'pair_code_ready'
+  if (/disconnect|logout|logged_out|close|stop|fail|error|banned/.test(s)) return 'disconnected'
+  if (/^connected$|open|working|ready|online|authenticated|logged_in/.test(s)) return 'connected'
+  return 'connecting'
+}
+
+/** QR as something an <img> can show: data URL, http URL, or rendered from the raw QR string. */
+async function qrImageFrom(state: Obj): Promise<string | null> {
+  const image = text(state.qrCodeImage) ?? text(state.qr_code_image) ?? text(state.image)
+  if (image) {
+    if (image.startsWith('data:') || image.startsWith('http')) return image
+    return `data:image/png;base64,${image}`
+  }
+  const raw = text(state.qrCode) ?? text(state.qr_code) ?? text(state.qr)
+  if (!raw) return null
+  if (raw.startsWith('data:')) return raw
+  return QRCode.toDataURL(raw, { margin: 1, width: 320 })
+}
+
+/** Response shape without secrets, so the format can be checked in dapi_webhook_log. */
+function shapeOf(v: unknown, depth = 0): unknown {
+  if (Array.isArray(v)) return v.slice(0, 2).map((x) => shapeOf(x, depth + 1))
+  if (!isObj(v)) return typeof v === 'string' ? (v.length > 24 ? `<string ${v.length}>` : v) : v
+  if (depth > 3) return '<object>'
+  return Object.fromEntries(Object.entries(v).map(([k, x]) => [k, /qr|pair|token|key/i.test(k) ? `<${typeof x}>` : shapeOf(x, depth + 1)]))
+}
+
+async function recordShape(sessionId: string, event: string, res: unknown) {
+  await supabaseAdmin()
+    .from('dapi_webhook_log')
+    .insert({ session_id: sessionId, event, payload: { shape: shapeOf(res) } })
+    .then(({ error }) => error && console.error('[dapi] shape log failed:', error.message))
 }
 
 function dapiFailure(err: unknown) {
@@ -83,9 +130,10 @@ export async function GET() {
       .maybeSingle()
     if (!row) return NextResponse.json({ enabled: true, configured: true, session: null })
 
-    let state: SessionState
+    const client = dapiClient()
+    let raw: unknown
     try {
-      state = unwrap<SessionState>(await dapiClient().sessions.get(row.session_id))
+      raw = await client.sessions.get(row.session_id)
     } catch (err) {
       if ((err as { status?: number }).status === 404) {
         await markDapiDisconnected(supabaseAdmin(), accountId)
@@ -93,32 +141,46 @@ export async function GET() {
       }
       throw err
     }
+    const state = unwrap(raw)
+    let status = normalizeStatus(state.status ?? state.state ?? state.connectionStatus)
+    console.log('[dapi] session status:', String(state.status ?? state.state ?? '?'), '->', status)
+    await recordShape(row.session_id, 'debug:get', raw)
 
     let syncError: string | null = null
     let qrImage: string | null = null
     let pairCode: string | null = null
-    const phone = phoneDigits(state.phone) ?? row.phone ?? null
+    const phone = phoneDigits(text(state.phone) ?? text(state.phoneNumber) ?? text(state.wid)) ?? row.phone ?? null
 
-    if (state.status === 'connected') {
+    if (status === 'connected') {
       syncError = await saveDapiConnection(supabaseAdmin(), { accountId, userId, sessionId: row.session_id, phone })
-    } else if (state.status === 'disconnected') {
+    } else if (status === 'disconnected') {
       if (row.status !== 'disconnected') await markDapiDisconnected(supabaseAdmin(), accountId)
-    } else if (canEdit && state.status === 'qr_ready') {
-      const qr = unwrap<{ qrCodeImage?: string }>(await dapiClient().sessions.getQRCode(row.session_id))
-      qrImage = qr.qrCodeImage ?? state.qrCodeImage ?? null
-    } else if (canEdit && state.status === 'pair_code_ready') {
-      const pc = unwrap<{ pairCode?: string }>(await dapiClient().sessions.getPairCode(row.session_id))
-      pairCode = pc.pairCode ?? state.pairCode ?? null
-    }
-
-    if (qrImage && !qrImage.startsWith('data:') && !qrImage.startsWith('http')) {
-      qrImage = `data:image/png;base64,${qrImage}`
+    } else if (canEdit) {
+      // Still pairing: ask for the QR (or pair code) whatever the status word says.
+      const pairMode = state.connectionMode === 'pair' || status === 'pair_code_ready'
+      try {
+        if (pairMode) {
+          const pcRaw = await client.sessions.getPairCode(row.session_id)
+          await recordShape(row.session_id, 'debug:pair', pcRaw)
+          const pc = unwrap(pcRaw)
+          pairCode = text(pc.pairCode) ?? text(pc.code) ?? text(state.pairCode) ?? null
+          if (pairCode) status = 'pair_code_ready'
+        } else {
+          const qrRaw = await client.sessions.getQRCode(row.session_id)
+          await recordShape(row.session_id, 'debug:qr', qrRaw)
+          qrImage = (await qrImageFrom(unwrap(qrRaw))) ?? (await qrImageFrom(state))
+          if (qrImage) status = 'qr_ready'
+        }
+      } catch (err) {
+        // Not ready yet: keep polling.
+        console.warn('[dapi] pairing data not ready:', (err as Error).message)
+      }
     }
 
     return NextResponse.json({
       enabled: true,
       configured: true,
-      session: { status: state.status, phone, qr_image: qrImage, pair_code: pairCode },
+      session: { status, phone, qr_image: qrImage, pair_code: pairCode },
       sync_error: syncError,
     })
   } catch (err) {
@@ -153,15 +215,15 @@ export async function POST(request: Request) {
 
     // Already connected: nothing to start, just make sure it is saved.
     try {
-      const current = unwrap<SessionState>(await client.sessions.get(sessionId))
-      if (current.status === 'connected') {
+      const current = unwrap(await client.sessions.get(sessionId))
+      if (normalizeStatus(current.status ?? current.state) === 'connected') {
         const syncError = await saveDapiConnection(supabaseAdmin(), {
           accountId,
           userId,
           sessionId,
-          phone: phoneDigits(current.phone),
+          phone: phoneDigits(text(current.phone)),
         })
-        return NextResponse.json({ session: { status: 'connected', phone: phoneDigits(current.phone) }, sync_error: syncError })
+        return NextResponse.json({ session: { status: 'connected', phone: phoneDigits(text(current.phone)) }, sync_error: syncError })
       }
       // A half-finished pairing: start over with the chosen mode.
       await client.sessions.delete(sessionId)
@@ -192,19 +254,20 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Não foi possível salvar a sessão.' }, { status: 500 })
     }
 
-    const created = unwrap<SessionState>(
-      await client.sessions.create({
-        sessionId,
-        connectionMode: mode,
-        ...(pairPhone ? { pairPhone } : {}),
-        webhookUrl: `${origin}/api/whatsapp/dapi/webhook?token=${token}`,
-        ignoreGroups: true,
-        ignoreStatus: true,
-        historySync: false,
-      }),
-    )
-
-    return NextResponse.json({ session: { status: created.status ?? 'connecting' } })
+    const createdRaw = await client.sessions.create({
+      sessionId,
+      connectionMode: mode,
+      ...(pairPhone ? { pairPhone } : {}),
+      webhookUrl: `${origin}/api/whatsapp/dapi/webhook?token=${token}`,
+      ignoreGroups: true,
+      ignoreStatus: true,
+      historySync: false,
+    })
+    await recordShape(sessionId, 'debug:create', createdRaw)
+    const created = unwrap(createdRaw)
+    // Fresh session: always pairing, whatever word D-API used.
+    const status = normalizeStatus(created.status)
+    return NextResponse.json({ session: { status: status === 'disconnected' ? 'connecting' : status } })
   } catch (err) {
     return dapiFailure(err)
   }

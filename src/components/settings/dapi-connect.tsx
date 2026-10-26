@@ -27,6 +27,8 @@ export interface DapiState {
 
 const POLL_MS = 3000;
 const POLL_LIMIT_MS = 5 * 60 * 1000;
+/** A brand-new session can report "disconnected" while it boots. */
+const START_GRACE_MS = 90 * 1000;
 
 /**
  * Starter plan: connect a WhatsApp number by scanning a QR code (or
@@ -54,7 +56,9 @@ export function DapiConnect({
 
   const status = state.session?.status ?? null;
   const connected = status === 'connected' && !state.sync_error;
-  const pairing = status === 'connecting' || status === 'qr_ready' || status === 'pair_code_ready';
+  // While polling, keep the pairing panel up even if D-API briefly reports
+  // the new session as disconnected (it is still starting).
+  const pairing = waiting || status === 'connecting' || status === 'qr_ready' || status === 'pair_code_ready';
 
   const refresh = useCallback(async (): Promise<DapiState | null> => {
     try {
@@ -86,7 +90,8 @@ export function DapiConnect({
       }
       return;
     }
-    if (data?.session?.status === 'disconnected' || Date.now() - pollStarted.current > POLL_LIMIT_MS) {
+    const elapsed = Date.now() - pollStarted.current;
+    if ((data?.session?.status === 'disconnected' && elapsed > START_GRACE_MS) || elapsed > POLL_LIMIT_MS) {
       stopPolling();
       return;
     }
@@ -206,7 +211,7 @@ export function DapiConnect({
 
         {canEdit && pairing && (
           <div className="space-y-3 rounded-lg border border-border p-4">
-            {status === 'qr_ready' && state.session?.qr_image ? (
+            {state.session?.qr_image ? (
               <div className="flex flex-col items-center gap-3">
                 {/* eslint-disable-next-line @next/next/no-img-element */}
                 <img
@@ -216,7 +221,7 @@ export function DapiConnect({
                 />
                 <p className="text-center text-sm text-muted-foreground">{t('qrSteps')}</p>
               </div>
-            ) : status === 'pair_code_ready' && state.session?.pair_code ? (
+            ) : state.session?.pair_code ? (
               <div className="flex flex-col items-center gap-3">
                 <p className="font-mono text-3xl font-semibold tracking-[0.3em] text-foreground">
                   {state.session.pair_code}
