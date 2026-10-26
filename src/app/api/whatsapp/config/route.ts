@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isDapiPhoneNumberId } from '@/lib/whatsapp/dapi'
 import { createClient } from '@/lib/supabase/server'
 import { createClient as createAdminClient } from '@supabase/supabase-js'
 import {
@@ -148,6 +149,15 @@ export async function GET() {
         },
         { status: 200 }
       )
+    }
+
+    // Starter (QR via D-API): there is no Meta number to verify; the
+    // connection's own status is kept current by /api/whatsapp/dapi and
+    // its webhook.
+    if (isDapiPhoneNumberId(config.phone_number_id)) {
+      return config.status === 'connected'
+        ? NextResponse.json({ connected: true, provider: 'dapi' })
+        : NextResponse.json({ connected: false, reason: 'disconnected', provider: 'dapi', message: 'WhatsApp desconectado. Conecte de novo pelo QR code.' })
     }
 
     // Try to decrypt the stored token with the current ENCRYPTION_KEY.

@@ -127,4 +127,45 @@ describe('translateDapiWebhook', () => {
     expect(translateDapiWebhook({ event: 'connection.update', data: { connection: 'close' } }, PNID).connection)
       .toEqual({ status: 'disconnected', phone: undefined })
   })
+
+  it('reads the documented messages.received envelope', () => {
+    const t = translateDapiWebhook(
+      {
+        event: 'messages.received',
+        sessionId: 'labcrm-acc1',
+        timestamp: '2026-10-26T20:20:00.000Z',
+        traceId: 'x',
+        data: {
+          id: '3EB0ABC',
+          type: 'text',
+          message: 'Olá, tudo bem?',
+          timestamp: 1793044800000,
+          fromMe: false,
+          is_group: false,
+          from: { jid: '5571988887777@s.whatsapp.net', name: 'Bia' },
+          from_name: 'Bia',
+          media_url: null,
+        },
+      },
+      PNID,
+    )
+    const change = firstChange(t)
+    expect(change.value.messages![0]).toMatchObject({ id: '3EB0ABC', from: '5571988887777', type: 'text', text: { body: 'Olá, tudo bem?' } })
+    expect(change.value.contacts![0]).toEqual({ wa_id: '5571988887777', profile: { name: 'Bia' } })
+  })
+
+  it('reads documented delivery and read events', () => {
+    const t = translateDapiWebhook({ event: 'message.read', data: { id: 'OUT9', to: { jid: '5571988887777@s.whatsapp.net' } } }, PNID)
+    expect(firstChange(t).value.statuses).toEqual([expect.objectContaining({ id: 'OUT9', status: 'read', recipient_id: '5571988887777' })])
+  })
+
+  it('reads a documented image with a ready media_url', () => {
+    const t = translateDapiWebhook(
+      { event: 'messages.received', data: { id: 'I1', type: 'image', message: 'legenda', fromMe: false, from: { jid: '5571988887777@s.whatsapp.net' }, media_url: 'https://cdn.example/x.jpg', mimetype: 'image/jpeg' } },
+      PNID,
+    )
+    const msg = firstChange(t).value.messages![0]
+    expect(msg.type).toBe('image')
+    expect(decodeDapiMediaId(msg.image!.id)).toMatchObject({ url: 'https://cdn.example/x.jpg' })
+  })
 })

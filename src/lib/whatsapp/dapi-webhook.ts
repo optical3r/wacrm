@@ -116,7 +116,7 @@ function unwrap(content: Obj): Obj {
 function mediaRef(sessionId: string, m: Obj, fallbackMime: string): DapiMediaRef {
   return {
     s: sessionId,
-    url: str(g(m, 'url', 'mediaUrl')),
+    url: str(g(m, 'url', 'mediaUrl', 'media_url')),
     direct_path: str(g(m, 'directPath', 'direct_path')),
     media_key: bytes(g(m, 'mediaKey', 'media_key')),
     mimetype: str(g(m, 'mimetype', 'mimeType', 'mime_type')) ?? fallbackMime,
@@ -227,7 +227,7 @@ function fromFlat(sessionId: string, m: Obj): Omit<WhatsAppMessage, 'id' | 'from
   const context = quoted ? { context: { id: quoted } } : {}
 
   if (type === 'text' || type === 'chat' || type === 'conversation' || type === 'extendedtext') {
-    const body = str(g(m, 'content', 'text', 'body'))
+    const body = str(g(m, 'message', 'content', 'text', 'body'))
     return body ? { type: 'text', text: { body }, ...context } : null
   }
 
@@ -244,10 +244,10 @@ function fromFlat(sessionId: string, m: Obj): Omit<WhatsAppMessage, 'id' | 'from
 
   if (type === 'reaction') {
     const target = str(g(m, 'reactionMessageId', 'targetMessageId', 'quotedMessageId'))
-    return target ? { type: 'reaction', reaction: { message_id: target, emoji: str(g(m, 'content', 'emoji', 'text')) ?? '' } } : null
+    return target ? { type: 'reaction', reaction: { message_id: target, emoji: str(g(m, 'message', 'content', 'emoji', 'text')) ?? '' } } : null
   }
 
-  const content = str(g(m, 'content', 'text', 'caption'))
+  const content = str(g(m, 'message', 'content', 'text', 'caption'))
   return content ? { type: 'text', text: { body: content }, ...context } : null
 }
 
@@ -259,7 +259,13 @@ function normalizeMessage(sessionId: string, raw: Obj): Normalized | null {
   const meta = isObj(key) ? key : isObj(info) ? info : raw
 
   const id = str(g(meta, 'id', 'messageId', 'ID'))
-  let chat = str(g(meta, 'remoteJid', 'chatId', 'chat', 'from', 'jid'))
+  const fromMe = bool(g(meta, 'fromMe', 'IsFromMe', 'isFromMe', 'from_me'))
+  // D-API's documented shape: from: { jid, name } (and to: {…} on own messages).
+  const jidOf = (v: unknown) => str(v) ?? str(g(v, 'jid', 'id'))
+  let chat =
+    jidOf(g(meta, 'remoteJid', 'chatId', 'chat', 'chat_jid')) ??
+    (fromMe ? jidOf(g(meta, 'to', 'recipient')) : undefined) ??
+    jidOf(g(meta, 'from', 'jid', 'sender'))
   if (!id || !chat) return null
 
   // Privacy (@lid) chats: use the phone-number alternative when given.
@@ -267,18 +273,20 @@ function normalizeMessage(sessionId: string, raw: Obj): Normalized | null {
     chat = str(g(meta, 'remoteJidAlt', 'senderPn', 'chatPn', 'senderAlt', 'participantPn')) ?? chat
   }
   if (!isPhoneJid(chat.includes('@') ? chat : `${chat}@s.whatsapp.net`)) return null
-  if (bool(g(meta, 'isGroup', 'IsGroup'))) return null
+  if (bool(g(meta, 'isGroup', 'IsGroup', 'is_group'))) return null
 
   const content = g(raw, 'message')
   const body = isObj(content) ? fromProto(sessionId, content) : fromFlat(sessionId, raw)
   if (!body) return null
 
-  const fromMe = bool(g(meta, 'fromMe', 'IsFromMe', 'isFromMe'))
   return {
     id,
     chatJid: chat,
     fromMe,
-    pushName: str(g(raw, 'pushName', 'senderName', 'notifyName')) ?? str(g(meta, 'PushName', 'pushName', 'senderName')),
+    pushName:
+      str(g(raw, 'pushName', 'senderName', 'notifyName', 'from_name')) ??
+      str(g(g(raw, 'from'), 'name')) ??
+      str(g(meta, 'PushName', 'pushName', 'senderName')),
     timestamp: seconds(g(raw, 'messageTimestamp', 'timestamp') ?? g(meta, 'Timestamp', 'timestamp')),
     message: { ...body, id, from: digits(chat), timestamp: '' } as WhatsAppMessage,
   }
@@ -306,7 +314,8 @@ function normalizeReceipts(raw: Obj, event: string): MetaStatus[] {
   const out: MetaStatus[] = []
   const key = g(raw, 'key')
   const update = g(raw, 'update')
-  const chat = str(g(key, 'remoteJid') ?? g(raw, 'chat', 'chatId', 'Chat', 'remoteJid', 'from')) ?? ''
+  const jidOf = (v: unknown) => str(v) ?? str(g(v, 'jid', 'id'))
+  const chat = jidOf(g(key, 'remoteJid') ?? g(raw, 'chat', 'chatId', 'Chat', 'remoteJid', 'to', 'recipient', 'from')) ?? ''
   const status =
     receiptStatus(g(update, 'status')) ??
     receiptStatus(g(raw, 'status', 'ack', 'type', 'receiptType', 'Type')) ??
@@ -380,7 +389,8 @@ export function translateDapiWebhook(payload: unknown, phoneNumberId: string): D
   const changes: WhatsAppWebhookEntry['changes'] = []
   const echoIds: string[] = []
 
-  const isReceipt = /receipt|ack|update|status/.test(event) && !/upsert|received|message\.new|messages?$/.test(event)
+  const isReceipt =
+    /receipt|ack|update|status|delivered|\.read$/.test(event) && !/upsert|received|message\.new|messages?$/.test(event)
 
   if (isReceipt) {
     const statuses = candidates(data).flatMap((c) => normalizeReceipts(c, event))

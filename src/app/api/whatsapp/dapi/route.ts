@@ -71,6 +71,38 @@ async function call<T>(p: Promise<T>): Promise<T> {
   return res
 }
 
+const WEBHOOK_EVENTS = ['messages.received', 'messages.sent', 'message.delivered', 'message.read', 'connection.status']
+
+/**
+ * Point the session's webhook at us and switch its events on. The
+ * webhookUrl given at create time alone is not enough: D-API only
+ * delivers events enabled in the session's webhook config.
+ */
+async function enableWebhook(client: ReturnType<typeof dapiClient>, sessionId: string, url: string) {
+  await call(client.sessions.updateWebhook(sessionId, { webhookUrl: url }))
+  await call(
+    client.sessions.updateWebhookConfig(sessionId, {
+      enabled: true,
+      type: 'single',
+      events: Object.fromEntries(WEBHOOK_EVENTS.map((e) => [e, { enabled: true, webhookUrl: url }])),
+    }),
+  )
+  await call(client.sessions.updateIgnoreSettings(sessionId, { ignoreGroups: true, ignoreStatus: true }))
+}
+
+/** A new secret webhook URL for the session; only the token's hash is stored. */
+async function newWebhookUrl(origin: string): Promise<{ url: string; hash: string }> {
+  const token = randomBytes(24).toString('base64url')
+  return {
+    url: `${origin}/api/whatsapp/dapi/webhook?token=${token}`,
+    hash: createHash('sha256').update(token).digest('hex'),
+  }
+}
+
+function siteOrigin(request: Request): string {
+  return process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') || new URL(request.url).origin
+}
+
 function text(v: unknown): string | undefined {
   return typeof v === 'string' && v ? v : undefined
 }
@@ -141,7 +173,7 @@ function phoneDigits(v: string | undefined): string | null {
   return d || null
 }
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
     const { accountId, userId, role, account } = await requireRole('viewer')
     if (account.plan !== 'starter') return NextResponse.json({ enabled: false })
@@ -182,6 +214,19 @@ export async function GET() {
       null
 
     if (status === 'connected') {
+      // Sessions paired before webhooks were switched on (or that lost
+      // their config): issue a fresh secret URL and enable the events.
+      const settings = isObj(state.settings) ? state.settings : {}
+      const hook = isObj(settings.webhook) ? settings.webhook : null
+      if (canEdit && !(hook && hook.enabled === true)) {
+        try {
+          const { url, hash } = await newWebhookUrl(siteOrigin(request))
+          await supabaseAdmin().from('dapi_sessions').update({ webhook_token_hash: hash }).eq('account_id', accountId)
+          await enableWebhook(client, row.session_id, url)
+        } catch (err) {
+          console.error('[dapi] enabling webhook failed:', (err as Error).message)
+        }
+      }
       syncError = await saveDapiConnection(supabaseAdmin(), { accountId, userId, sessionId: row.session_id, phone })
     } else if (status === 'disconnected') {
       if (row.status !== 'disconnected') await markDapiDisconnected(supabaseAdmin(), accountId)
@@ -271,8 +316,7 @@ export async function POST(request: Request) {
     const sessionId = dapiSessionIdFor(accountId)
 
     // A fresh secret per session; only its hash is stored.
-    const token = randomBytes(24).toString('base64url')
-    const origin = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') || new URL(request.url).origin
+    const hook = await newWebhookUrl(siteOrigin(request))
     const now = new Date().toISOString()
 
     const { error: saveError } = await supabaseAdmin()
@@ -280,7 +324,7 @@ export async function POST(request: Request) {
       .upsert({
         account_id: accountId,
         session_id: sessionId,
-        webhook_token_hash: createHash('sha256').update(token).digest('hex'),
+        webhook_token_hash: hook.hash,
         status: 'connecting',
         phone: null,
         risk_accepted_at: now,
@@ -297,13 +341,19 @@ export async function POST(request: Request) {
       sessionId,
       connectionMode: mode,
       ...(pairPhone ? { pairPhone } : {}),
-      webhookUrl: `${origin}/api/whatsapp/dapi/webhook?token=${token}`,
+      webhookUrl: hook.url,
       ignoreGroups: true,
       ignoreStatus: true,
       historySync: false,
     })
     await recordShape(sessionId, 'debug:create', createdRaw)
     await call(Promise.resolve(createdRaw))
+    try {
+      await enableWebhook(client, sessionId, hook.url)
+    } catch (err) {
+      // Retried by GET once the number is connected.
+      console.error('[dapi] enabling webhook failed:', (err as Error).message)
+    }
     const created = unwrap(createdRaw)
     // Fresh session: always pairing, whatever word D-API used.
     const status = normalizeStatus(created.status)
