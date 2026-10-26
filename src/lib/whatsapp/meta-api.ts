@@ -12,6 +12,17 @@
 import { isBusinessScopedUserId } from './wa-identity'
 import { getT } from '@/lib/i18n/translate'
 import { metaApiBase } from './provider'
+import {
+  DAPI_ACCESS_TOKEN,
+  dapiMediaUrl,
+  dapiSendButtons,
+  dapiSendList,
+  dapiSendMedia,
+  dapiSendReaction,
+  dapiSendText,
+  isDapiMediaId,
+  isDapiPhoneNumberId,
+} from './dapi'
 
 const ti = getT('Validation.interactive')
 
@@ -372,6 +383,10 @@ export async function sendTextMessage(
   args: SendTextMessageArgs
 ): Promise<MetaSendResult> {
   const { phoneNumberId, accessToken, to, text, contextMessageId } = args
+  // Starter plan: QR-code connection through D-API (see dapi.ts).
+  if (isDapiPhoneNumberId(phoneNumberId)) {
+    return dapiSendText({ phoneNumberId, to, text, contextMessageId })
+  }
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
   const body: Record<string, unknown> = {
     messaging_product: 'whatsapp',
@@ -430,6 +445,9 @@ export async function sendMediaMessage(
 ): Promise<MetaSendResult> {
   const { phoneNumberId, accessToken, to, kind, link, caption, filename, contextMessageId } = args
   if (!link) throw new Error('sendMediaMessage requires a link.')
+  if (isDapiPhoneNumberId(phoneNumberId)) {
+    return dapiSendMedia({ phoneNumberId, to, kind, link, caption, filename, contextMessageId })
+  }
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
 
   // Audio accepts neither caption nor filename per Meta's spec — adding
@@ -524,6 +542,9 @@ export async function sendTemplateMessage(
     messageParams,
     contextMessageId,
   } = args
+  if (isDapiPhoneNumberId(phoneNumberId)) {
+    throw new Error('Templates não estão disponíveis no plano Starter (conexão por QR code).')
+  }
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
 
   const templatePayload: Record<string, unknown> = {
@@ -817,6 +838,9 @@ export async function sendReactionMessage(
   args: SendReactionMessageArgs
 ): Promise<MetaSendResult> {
   const { phoneNumberId, accessToken, to, targetMessageId, emoji } = args
+  if (isDapiPhoneNumberId(phoneNumberId)) {
+    return dapiSendReaction({ phoneNumberId, to, targetMessageId, emoji })
+  }
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
   const response = await fetch(url, {
     method: 'POST',
@@ -868,6 +892,9 @@ export async function sendTypingIndicator(
   args: SendTypingIndicatorArgs
 ): Promise<void> {
   const { phoneNumberId, accessToken, messageId } = args
+  // D-API needs the chat to address presence to; this signature only has
+  // the inbound message id, so the indicator is skipped there.
+  if (isDapiPhoneNumberId(phoneNumberId)) return
   const url = `${META_API_BASE}/${phoneNumberId}/messages`
   const response = await fetch(url, {
     method: 'POST',
@@ -977,6 +1004,10 @@ export async function sendInteractiveButtons(
         ti('buttonTitleTooLong', { title: btn.title, max: INTERACTIVE_LIMITS.buttonTitleMaxLength })
       )
     }
+  }
+
+  if (isDapiPhoneNumberId(phoneNumberId)) {
+    return dapiSendButtons({ phoneNumberId, to, bodyText, headerText, footerText, buttons })
   }
 
   const interactive: Record<string, unknown> = {
@@ -1105,6 +1136,10 @@ export async function sendInteractiveList(
     }
   }
 
+  if (isDapiPhoneNumberId(phoneNumberId)) {
+    return dapiSendList({ phoneNumberId, to, bodyText, buttonLabel, headerText, footerText, sections })
+  }
+
   const interactive: Record<string, unknown> = {
     type: 'list',
     body: { text: bodyText },
@@ -1195,6 +1230,7 @@ export async function getMediaUrl(
   args: GetMediaUrlArgs
 ): Promise<{ url: string; mimeType: string; fileSize: number | null }> {
   const { mediaId, accessToken } = args
+  if (isDapiMediaId(mediaId)) return dapiMediaUrl(mediaId)
   const response = await fetch(`${META_API_BASE}/${mediaId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   })
@@ -1226,8 +1262,9 @@ export async function downloadMedia(
   args: DownloadMediaArgs
 ): Promise<{ buffer: Buffer; contentType: string }> {
   const { downloadUrl, accessToken } = args
+  // D-API hands back a presigned URL: an Authorization header would break it.
   const response = await fetch(downloadUrl, {
-    headers: { Authorization: `Bearer ${accessToken}` },
+    headers: accessToken === DAPI_ACCESS_TOKEN ? {} : { Authorization: `Bearer ${accessToken}` },
   })
   if (!response.ok) {
     throw new Error(`Media download failed: ${response.status}`)

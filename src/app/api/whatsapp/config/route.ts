@@ -275,8 +275,18 @@ export async function POST(request: Request) {
       )
     }
 
+    // Starter accounts connect by QR code (/api/whatsapp/dapi), never with
+    // Meta credentials; and `dapi:` ids are reserved for that route.
+    const { data: plan } = await supabase.from('accounts').select('plan').eq('id', accountId).maybeSingle()
+    if (plan?.plan === 'starter') {
+      return NextResponse.json({ error: 'No plano Starter a conexão é feita por QR code.' }, { status: 403 })
+    }
+
     const body = await request.json()
     const { phone_number_id, waba_id, access_token, verify_token, pin } = body
+    if (typeof phone_number_id === 'string' && phone_number_id.trim().toLowerCase().startsWith('dapi:')) {
+      return NextResponse.json({ error: t('whatsappConfig.credentialsRequired') }, { status: 400 })
+    }
 
     if (!access_token || !phone_number_id) {
       return NextResponse.json(

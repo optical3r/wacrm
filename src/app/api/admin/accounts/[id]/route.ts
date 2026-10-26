@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { toErrorResponse } from "@/lib/auth/account";
 import { requireSuperAdmin } from "@/lib/admin/super-admin";
+import { logoutDapiSession } from "@/lib/whatsapp/dapi-connection";
 
 type Action =
   | { action: "approve"; plan: "starter" | "pro" }
@@ -65,6 +66,7 @@ export async function PATCH(
         .update({ status: "disconnected", updated_at: new Date().toISOString() })
         .eq("account_id", id);
       if (error) throw error;
+      await logoutDapiSession(admin, id);
     };
 
     let update: Record<string, string> | null = null;

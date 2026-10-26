@@ -214,7 +214,10 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
         {/* Main navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">
           <ul className="flex flex-col gap-1">
-            {navItems.map((item) => {
+            {navItems
+              // Broadcasts are template sends: not on the Starter (QR) plan.
+              .filter((item) => !(account?.plan === "starter" && item.href === "/broadcasts"))
+              .map((item) => {
               const isActive =
                 pathname === item.href ||
                 (item.href !== "/dashboard" && pathname.startsWith(item.href));

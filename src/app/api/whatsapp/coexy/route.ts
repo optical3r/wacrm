@@ -145,6 +145,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Coexy não está ativo neste servidor.' }, { status: 400 })
     }
     const { accountId, userId, account } = await requireRole('admin')
+    if (account.plan === 'starter') {
+      return NextResponse.json({ error: 'A API oficial é do plano Pro. No Starter, conecte por QR code.' }, { status: 403 })
+    }
     const admin = supabaseAdmin()
 
     const origin = process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, '') || new URL(request.url).origin

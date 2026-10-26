@@ -25,6 +25,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Switch } from '@/components/ui/switch';
 import { SettingsPanelHead } from './settings-panel-head';
 import { CoexyConnect, type CoexyState } from './coexy-connect';
+import { DapiConnect, type DapiState } from './dapi-connect';
 import {
   Accordion,
   AccordionItem,
@@ -75,7 +76,10 @@ export function WhatsAppConfig() {
     loading: authLoading,
     profileLoading,
     canEditSettings,
+    account,
   } = useAuth();
+  // Starter plan connects by QR code (D-API); Pro uses the official API.
+  const isStarter = account?.plan === 'starter';
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -102,6 +106,7 @@ export function WhatsAppConfig() {
   // credentials form with a single "Conectar" button. Null until the
   // server says which mode it runs in.
   const [coexy, setCoexy] = useState<CoexyState | null>(null);
+  const [dapi, setDapi] = useState<DapiState | null>(null);
 
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [wabaId, setWabaId] = useState('');
@@ -493,6 +498,20 @@ export function WhatsAppConfig() {
   useEffect(() => {
     if (authLoading || profileLoading || !user || !accountId) return;
     let cancelled = false;
+    if (isStarter) {
+      fetch('/api/whatsapp/dapi', { cache: 'no-store' })
+        .then((res) => res.json())
+        .then((data) => {
+          if (!cancelled) setDapi(data?.enabled ? data : { enabled: true, configured: false, session: null });
+        })
+        .catch(() => {
+          if (!cancelled) setDapi({ enabled: true, configured: false, session: null });
+        });
+      setCoexy({ enabled: false, channel: null });
+      return () => {
+        cancelled = true;
+      };
+    }
     fetch('/api/whatsapp/coexy', { cache: 'no-store' })
       .then((res) => res.json())
       .then((data) => {
@@ -504,14 +523,14 @@ export function WhatsAppConfig() {
     return () => {
       cancelled = true;
     };
-  }, [authLoading, profileLoading, user, accountId]);
+  }, [authLoading, profileLoading, user, accountId, isStarter]);
 
   function handleCopyWebhookUrl() {
     navigator.clipboard.writeText(webhookUrl);
     toast.success(t('webhookCopied'));
   }
 
-  if (loading || (user && accountId && coexy === null)) {
+  if (loading || (user && accountId && (isStarter ? dapi === null : coexy === null))) {
     return (
       <section className="animate-in fade-in-50 duration-200">
         <SettingsPanelHead
@@ -520,6 +539,23 @@ export function WhatsAppConfig() {
         />
         <div className="flex items-center justify-center py-12">
           <Loader2 className="size-6 animate-spin text-primary" />
+        </div>
+      </section>
+    );
+  }
+
+  if (isStarter && dapi) {
+    return (
+      <section className="animate-in fade-in-50 duration-200">
+        <SettingsPanelHead title={t("title")} description={t("description")} />
+        <div className="max-w-2xl">
+          <DapiConnect
+            initial={dapi}
+            canEdit={canEditSettings}
+            onConnected={() => {
+              if (accountId) fetchConfig(accountId);
+            }}
+          />
         </div>
       </section>
     );

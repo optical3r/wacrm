@@ -39,6 +39,9 @@ export type SettingsSection = (typeof SETTINGS_SECTIONS)[number];
 
 export const DEFAULT_SECTION: SettingsSection = 'overview';
 
+/** Sections the Starter plan (QR-code connection) has no use for: Meta templates need the official API. */
+export const STARTER_HIDDEN_SECTIONS: readonly SettingsSection[] = ['templates'];
+
 /** Rail grouping. `adminOnly` items are hidden for non-admins. */
 export interface SectionMeta {
   id: SettingsSection;

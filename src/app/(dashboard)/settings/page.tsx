@@ -20,6 +20,7 @@ import { MembersTab } from '@/components/settings/members-tab';
 import { ApiKeysSettings } from '@/components/settings/api-keys-settings';
 import {
   resolveSection,
+  STARTER_HIDDEN_SECTIONS,
   type SettingsSection,
 } from '@/components/settings/settings-sections';
 
@@ -42,7 +43,7 @@ export default function SettingsPage() {
 function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { defaultCurrency } = useAuth();
+  const { defaultCurrency, account } = useAuth();
   const { mode } = useTheme();
   const t = useTranslations('Settings');
 
@@ -50,7 +51,9 @@ function SettingsPageInner() {
   // section — deep-linkable, and it keeps the existing links in the
   // app sidebar/header working. Legacy tab values (tags, custom-fields)
   // resolve onto their new home; unknown/empty → the Overview landing.
-  const section = resolveSection(searchParams.get('tab'));
+  const hiddenSections = account?.plan === 'starter' ? STARTER_HIDDEN_SECTIONS : [];
+  const requested = resolveSection(searchParams.get('tab'));
+  const section = hiddenSections.includes(requested) ? 'overview' : requested;
 
   const go = (next: SettingsSection) => {
     const params = new URLSearchParams(searchParams.toString());
@@ -95,7 +98,7 @@ function SettingsPageInner() {
       </div>
 
       <div className="mt-6 grid gap-6 lg:grid-cols-[236px_minmax(0,1fr)] lg:items-start">
-        <SettingsRail active={section} onSelect={go} hints={hints} />
+        <SettingsRail active={section} onSelect={go} hints={hints} hidden={hiddenSections} />
         <div className="min-w-0">{panel[section]}</div>
       </div>
     </div>
