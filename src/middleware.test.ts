@@ -114,6 +114,28 @@ describe("middleware — refreshed auth cookies survive redirects", () => {
   });
 });
 
+describe("middleware — home page", () => {
+  it("shows the public landing page to a signed-out visitor", async () => {
+    mockUser = null;
+    refreshedCookies = [{ ...ROTATED, value: "cleared" }];
+
+    const res = await middleware(new NextRequest("https://app.test/"));
+
+    expect(res.headers.get("location")).toBeNull();
+    expect(res.headers.get("x-middleware-rewrite")).toContain("/site/index.html");
+    expect(res.cookies.get(ROTATED.name)?.value).toBe("cleared");
+  });
+
+  it("leaves / alone for a signed-in user (the page redirects to /dashboard)", async () => {
+    mockUser = { id: "user-1" };
+
+    const res = await middleware(new NextRequest("https://app.test/"));
+
+    expect(res.headers.get("x-middleware-rewrite")).toBeNull();
+    expect(res.headers.get("location")).toBeNull();
+  });
+});
+
 describe("middleware — every dashboard route requires a session", () => {
   // Read the route group rather than hard-coding a list, so a new page added
   // under src/app/(dashboard)/ fails here until it is added to

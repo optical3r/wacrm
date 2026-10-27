@@ -69,6 +69,15 @@ export async function middleware(request: NextRequest) {
     return withRefreshedCookies(NextResponse.redirect(url))
   }
 
+  // Home - signed-out visitors get the public LabCRM landing page
+  // (static, public/site/index.html). Signed-in users fall through to
+  // src/app/page.tsx, which sends them to /dashboard as before.
+  if (!user && request.nextUrl.pathname === '/') {
+    const url = request.nextUrl.clone()
+    url.pathname = '/site/index.html'
+    return withRefreshedCookies(NextResponse.rewrite(url))
+  }
+
   // Protected pages - redirect to login if not authenticated
   // Every top-level route under src/app/(dashboard)/ belongs here —
   // middleware.test.ts reads that directory and fails on a missing one.
