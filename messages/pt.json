@@ -351,6 +351,18 @@
       "resumed": "IA retomada.",
       "updateError": "Não foi possível atualizar o assistente de IA.",
       "networkError": "Não foi possível conectar ao servidor."
+    },
+    "channel": {
+      "unnamed": "Número sem nome",
+      "via": "via {name}",
+      "senderVia": "{sender} via {name}",
+      "sendingBy": "Enviando por:",
+      "pickLabel": "Número de envio",
+      "noOwnNumber": "Conecte o seu WhatsApp em Configurações › WhatsApp para responder.",
+      "disconnected": "Este número está desconectado. Reconecte o WhatsApp em Configurações para responder.",
+      "allNumbers": "Todos os números",
+      "mine": "Meus chats",
+      "byNumber": "Número"
     }
   },
   "Contacts": {
@@ -1437,7 +1449,8 @@
       "fieldsCount": "{count} {count, plural, =1 {campo personalizado} other {campos personalizados}}",
       "appearance": "modo {mode} · destaque {theme}",
       "yourAccount": "Sua conta",
-      "loading": "Carregando…"
+      "loading": "Carregando…",
+      "numbersConnected": "{connected} de {total} números conectados"
     },
     "members": {
       "title": "Membros da equipe",
@@ -2048,8 +2061,8 @@
       "connectFailed": "Não foi possível iniciar a conexão."
     },
     "dapi": {
-      "title": "Conectar WhatsApp por QR code",
-      "description": "No plano Starter o número é conectado pelo WhatsApp do celular, lendo um QR code, como no WhatsApp Web.",
+      "title": "Meu WhatsApp",
+      "description": "Cada membro da equipe conecta o próprio número pelo WhatsApp do celular, lendo um QR code, como no WhatsApp Web. As conversas de todos os números ficam no mesmo inbox.",
       "connect": "Gerar QR code",
       "reconnect": "Conectar de novo",
       "checkAgain": "Verificar conexão",
@@ -2075,8 +2088,27 @@
       "pairSteps": "No celular, abra o WhatsApp > Aparelhos conectados > Conectar um aparelho > Conectar com número de telefone e digite este código.",
       "notConfiguredTitle": "Conexão por QR code indisponível",
       "notConfiguredDesc": "Falta a variável DAPI_API_KEY no servidor. Fale com o administrador da plataforma.",
-      "adminOnly": "Só administradores da conta podem conectar o WhatsApp.",
-      "sessionLost": "A sessão de conexão expirou. Clique em Gerar QR code de novo."
+      "adminOnly": "Leitores não conectam números. Peça a um administrador para mudar seu papel.",
+      "sessionLost": "A sessão de conexão expirou. Clique em Gerar QR code de novo.",
+      "limitTitle": "Limite de números atingido",
+      "limitDesc": "Esta conta já usa os {max} números do plano. Peça a um administrador para remover um número desconectado ou para aumentar o limite.",
+      "numbersTitle": "Números da conta",
+      "numbersDesc": "{count} de {max} números em uso. Cada atendente responde pelo próprio número.",
+      "numbersDescOwn": "O seu número conectado.",
+      "noNumbers": "Nenhum número conectado ainda.",
+      "unknownOwner": "Sem dono",
+      "you": "Você",
+      "defaultBadge": "Padrão",
+      "statusConnected": "Conectado",
+      "statusDisconnected": "Desconectado",
+      "noPhone": "Número ainda não identificado",
+      "ownerLine": "de {name}",
+      "rename": "Renomear",
+      "renamePrompt": "Nome do número (ex.: Comercial Ana):",
+      "makeDefault": "Tornar padrão",
+      "remove": "Remover",
+      "removeConfirm": "Remover este número da conta? A vaga fica livre. As conversas continuam, mas as mensagens perdem a etiqueta do número.",
+      "saveFailed": "Não foi possível salvar."
     }
   },
   "SignupPage": {
@@ -2812,7 +2844,8 @@
     "whatsapp": {
       "connected": "Conectado",
       "disconnected": "Desconectado",
-      "none": "Não conectado"
+      "none": "Não conectado",
+      "numbers": "{connected} de {max} números conectados"
     },
     "cols": {
       "organization": "Organização",
@@ -2832,7 +2865,8 @@
       "unblock": "Desbloquear",
       "toStarter": "Mudar para Starter",
       "toPro": "Mudar para Pro",
-      "disconnect": "Desconectar WhatsApp"
+      "disconnect": "Desconectar WhatsApp",
+      "setLimit": "Alterar limite"
     },
     "done": {
       "approve": "{name} aprovada.",
@@ -2840,7 +2874,8 @@
       "block": "{name} bloqueada.",
       "unblock": "{name} desbloqueada.",
       "set_plan": "Plano de {name} alterado.",
-      "disconnect_whatsapp": "WhatsApp de {name} desconectado."
+      "disconnect_whatsapp": "WhatsApp de {name} desconectado.",
+      "set_max_numbers": "Limite de números de {name} alterado."
     },
     "confirm": {
       "reject": {
@@ -2859,7 +2894,9 @@
         "title": "Desconectar o WhatsApp de {name}?",
         "desc": "O número para de enviar e receber até a organização conectar de novo."
       }
-    }
+    },
+    "limitPrompt": "Limite de números de {name} (1 a 50):",
+    "limitInvalid": "Informe um número inteiro de 1 a 50."
   },
   "AccountStatusGate": {
     "pendingTitle": "Cadastro em análise",

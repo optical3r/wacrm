@@ -9,11 +9,12 @@ type Action =
   | { action: "block" }
   | { action: "unblock" }
   | { action: "set_plan"; plan: "starter" | "pro" }
-  | { action: "disconnect_whatsapp" };
+  | { action: "disconnect_whatsapp" }
+  | { action: "set_max_numbers"; max_numbers: number };
 
 function parseAction(body: unknown): Action | null {
   if (!body || typeof body !== "object") return null;
-  const b = body as { action?: unknown; plan?: unknown };
+  const b = body as { action?: unknown; plan?: unknown; max_numbers?: unknown };
   const plan = b.plan === "starter" || b.plan === "pro" ? b.plan : null;
   switch (b.action) {
     case "approve":
@@ -24,6 +25,10 @@ function parseAction(body: unknown): Action | null {
     case "unblock":
     case "disconnect_whatsapp":
       return { action: b.action };
+    case "set_max_numbers": {
+      const n = Number(b.max_numbers);
+      return Number.isInteger(n) && n >= 1 && n <= 50 ? { action: b.action, max_numbers: n } : null;
+    }
     default:
       return null;
   }
@@ -31,8 +36,9 @@ function parseAction(body: unknown): Action | null {
 
 /**
  * Platform-owner actions on one organization: approve (with a plan),
- * reject, block, unblock, change plan, disconnect WhatsApp. Each one
- * is written to admin_audit_log.
+ * reject, block, unblock, change plan, disconnect WhatsApp (every
+ * number of the account), set the Starter number limit. Each one is
+ * written to admin_audit_log.
  *
  * A plan change also disconnects the WhatsApp number, since Starter
  * (QR code) and Pro (official API) connect in different ways; the
@@ -69,7 +75,7 @@ export async function PATCH(
       await logoutDapiSession(admin, id);
     };
 
-    let update: Record<string, string> | null = null;
+    let update: Record<string, string | number> | null = null;
     switch (action.action) {
       case "approve":
         update = { status: "active", plan: action.plan };
@@ -89,6 +95,10 @@ export async function PATCH(
         break;
       case "disconnect_whatsapp":
         await disconnect();
+        break;
+      case "set_max_numbers":
+        // Numbers already connected stay; the limit only blocks new ones.
+        update = { max_numbers: action.max_numbers };
         break;
     }
 

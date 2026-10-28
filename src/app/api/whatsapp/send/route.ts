@@ -35,7 +35,7 @@ export async function POST(request: Request) {
     // still delivered a real WhatsApp message to the customer and merely
     // failed to record it (surfacing as "sent to Meta but failed to save
     // to DB"). RLS can't un-send that, so the role check belongs here.
-    const { supabase, accountId, userId } = await requireRole('agent')
+    const { supabase, accountId, userId, role } = await requireRole('agent')
 
     // Per-user rate limit. Bucket key is scoped to this route so
     // `/broadcast` has an independent budget.
@@ -61,6 +61,7 @@ export async function POST(request: Request) {
       template_message_params,
       interactive_payload,
       reply_to_message_id,
+      channel_id,
     } = body
 
     if ((!conversationIdInput && !contact_id) || !message_type) {
@@ -133,7 +134,8 @@ export async function POST(request: Request) {
         supabase,
         accountId,
         userId,
-        contact_id
+        contact_id,
+        role === 'agent'
       )
       if (!resolved) {
         return NextResponse.json(
@@ -168,6 +170,9 @@ export async function POST(request: Request) {
         templateMessageParams: template_message_params,
         interactivePayload: interactive_payload,
         replyToMessageId: reply_to_message_id,
+        senderUserId: userId,
+        senderRole: role,
+        channelId: typeof channel_id === 'string' && channel_id ? channel_id : null,
       })
 
       return NextResponse.json({
@@ -206,6 +211,9 @@ async function findOrCreateConversation(
   accountId: string,
   userId: string,
   contactId: string,
+  // An agent opening a chat owns it — otherwise (Starter) they could not
+  // see the conversation they just created (migration 051).
+  assignToCaller: boolean,
 ): Promise<string | null> {
   const { data: existing } = await supabase
     .from('conversations')
@@ -222,6 +230,7 @@ async function findOrCreateConversation(
       account_id: accountId,
       user_id: userId,
       contact_id: contactId,
+      ...(assignToCaller ? { assigned_agent_id: userId } : {}),
     })
     .select('id')
     .single()

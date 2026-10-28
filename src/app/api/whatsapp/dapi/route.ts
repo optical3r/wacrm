@@ -4,7 +4,7 @@ import { createClient as createAdminClient, type SupabaseClient } from '@supabas
 import QRCode from 'qrcode'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { hasMinRole } from '@/lib/auth/roles'
-import { markDapiDisconnected, saveDapiConnection } from '@/lib/whatsapp/dapi-connection'
+import { markDapiDisconnected, NUMBER_LIMIT_MESSAGE, saveDapiConnection } from '@/lib/whatsapp/dapi-connection'
 import {
   dapiClient,
   dapiSessionIdFor,
@@ -12,15 +12,24 @@ import {
 } from '@/lib/whatsapp/dapi'
 
 /**
- * WhatsApp by QR code for the Starter plan, through D-API.
+ * WhatsApp by QR code for the Starter plan, through D-API. Each member
+ * connects their own number (up to accounts.max_numbers per account,
+ * migration 051).
  *
- *   GET    → { enabled, session } — session status plus, while pairing,
- *            the QR image or pair code (admins only). Once connected,
- *            saves the session into whatsapp_config so the inbox,
- *            flows and automations send through it.
+ *   GET    → { enabled, numbers, max_numbers, session } — the account's
+ *            numbers (all of them for owner / admin, only the caller's
+ *            for others) and the caller's own session: status plus, while
+ *            pairing, the QR image or pair code. Once connected, saves
+ *            the session as the caller's number in whatsapp_config.
  *   POST   → { mode: 'qr' | 'pair', phone?, accept_risk: true } starts a
- *            fresh session. The admin must accept the ban-risk notice.
- *   DELETE → logs the number out and marks the connection disconnected.
+ *            fresh session for the caller (agent and up). The ban-risk
+ *            notice must be accepted.
+ *   PATCH  → { channel_id, label?, is_default? } renames a number (own,
+ *            or any for owner / admin) or makes it the default (owner /
+ *            admin).
+ *   DELETE → ?channel_id= logs a number out (own, or any for owner /
+ *            admin); &remove=1 also deletes a disconnected number, owner /
+ *            admin only. History is kept either way.
  *
  * DAPI_API_KEY stays on the server; the browser only sees status, the
  * QR image and the pair code.
@@ -173,99 +182,184 @@ function phoneDigits(v: string | undefined): string | null {
   return d || null
 }
 
+interface NumberRow {
+  id: string
+  owner_user_id: string | null
+  label: string | null
+  status: string
+  is_default: boolean
+  phone_number_id: string
+  connected_at: string | null
+}
+
+/** The account's numbers as the settings page shows them. */
+async function listNumbers(accountId: string, userId: string, all: boolean) {
+  const admin = supabaseAdmin()
+  const { data: rows } = await admin
+    .from('whatsapp_config')
+    .select('id, owner_user_id, label, status, is_default, phone_number_id, connected_at, created_at')
+    .eq('account_id', accountId)
+    .order('is_default', { ascending: false })
+    .order('created_at', { ascending: true })
+  const numbers = ((rows ?? []) as NumberRow[]).filter((r) => all || r.owner_user_id === userId)
+  const sessionIds = numbers.map((n) => n.phone_number_id.replace(/^dapi:/, ''))
+  const ownerIds = [...new Set(numbers.map((n) => n.owner_user_id).filter(Boolean))] as string[]
+  const [{ data: sessions }, { data: profiles }] = await Promise.all([
+    sessionIds.length
+      ? admin.from('dapi_sessions').select('session_id, phone').in('session_id', sessionIds)
+      : Promise.resolve({ data: [] }),
+    ownerIds.length
+      ? admin.from('profiles').select('user_id, full_name, email').in('user_id', ownerIds)
+      : Promise.resolve({ data: [] }),
+  ])
+  const phoneBySession = new Map(
+    ((sessions ?? []) as Array<{ session_id: string; phone: string | null }>).map((x) => [x.session_id, x.phone]),
+  )
+  const nameByUser = new Map(
+    ((profiles ?? []) as Array<{ user_id: string; full_name: string | null; email: string | null }>).map((p) => [
+      p.user_id,
+      p.full_name || p.email || null,
+    ]),
+  )
+  return numbers.map((n) => ({
+    id: n.id,
+    label: n.label,
+    status: n.status === 'connected' ? 'connected' : 'disconnected',
+    is_default: n.is_default,
+    phone: phoneBySession.get(n.phone_number_id.replace(/^dapi:/, '')) ?? null,
+    owner_user_id: n.owner_user_id,
+    owner_name: n.owner_user_id ? nameByUser.get(n.owner_user_id) ?? null : null,
+    mine: n.owner_user_id === userId,
+    connected_at: n.connected_at,
+  }))
+}
+
+async function maxNumbers(accountId: string): Promise<number> {
+  const { data } = await supabaseAdmin().from('accounts').select('max_numbers').eq('id', accountId).maybeSingle()
+  return (data as { max_numbers?: number } | null)?.max_numbers ?? 5
+}
+
+/** The caller's own D-API session row, if any. */
+async function ownSession(accountId: string, userId: string) {
+  const { data } = await supabaseAdmin()
+    .from('dapi_sessions')
+    .select('session_id, status, phone')
+    .eq('account_id', accountId)
+    .eq('owner_user_id', userId)
+    .maybeSingle()
+  return data as { session_id: string; status: string; phone: string | null } | null
+}
+
 export async function GET(request: Request) {
   try {
     const { accountId, userId, role, account } = await requireRole('viewer')
     if (account.plan !== 'starter') return NextResponse.json({ enabled: false })
-    if (!hasDapiApiKey()) return NextResponse.json({ enabled: true, configured: false, session: null })
-    const canEdit = hasMinRole(role, 'admin')
-
-    const { data: row } = await supabaseAdmin()
-      .from('dapi_sessions')
-      .select('session_id, status, phone')
-      .eq('account_id', accountId)
-      .maybeSingle()
-    if (!row) return NextResponse.json({ enabled: true, configured: true, session: null })
-
-    const client = dapiClient()
-    let raw: unknown
-    try {
-      raw = await call(client.sessions.get(row.session_id))
-    } catch (err) {
-      if ((err as { status?: number }).status === 404) {
-        // Gone on D-API's side (or never created): back to the connect form.
-        await markDapiDisconnected(supabaseAdmin(), accountId)
-        return NextResponse.json({ enabled: true, configured: true, session: null })
-      }
-      throw err
-    }
-    const state = unwrap(raw)
-    let status = normalizeStatus(state.status ?? state.state ?? state.connectionStatus)
-    console.log('[dapi] session status:', String(state.status ?? state.state ?? '?'), '->', status)
-    await recordShape(row.session_id, 'debug:get', raw)
-
-    let syncError: string | null = null
-    let qrImage: string | null = null
-    let pairCode: string | null = null
-    const auth = isObj(state.authData) ? state.authData : {}
-    const phone =
-      phoneDigits(text(state.phone) ?? text(auth.phone) ?? text(auth.jid) ?? text(state.phoneNumber) ?? text(state.wid)) ??
-      row.phone ??
-      null
-
-    if (status === 'connected') {
-      // Sessions paired before webhooks were switched on (or that lost
-      // their config): issue a fresh secret URL and enable the events.
-      const settings = isObj(state.settings) ? state.settings : {}
-      const hook = isObj(settings.webhook) ? settings.webhook : null
-      if (canEdit && !(hook && hook.enabled === true)) {
-        try {
-          const { url, hash } = await newWebhookUrl(siteOrigin(request))
-          await supabaseAdmin().from('dapi_sessions').update({ webhook_token_hash: hash }).eq('account_id', accountId)
-          await enableWebhook(client, row.session_id, url)
-        } catch (err) {
-          console.error('[dapi] enabling webhook failed:', (err as Error).message)
-        }
-      }
-      syncError = await saveDapiConnection(supabaseAdmin(), { accountId, userId, sessionId: row.session_id, phone })
-    } else if (status === 'disconnected') {
-      if (row.status !== 'disconnected') await markDapiDisconnected(supabaseAdmin(), accountId)
-    } else if (canEdit) {
-      // Still pairing: ask for the QR (or pair code) whatever the status word says.
-      const pairMode = state.connectionMode === 'pair' || status === 'pair_code_ready'
-      try {
-        if (pairMode) {
-          const pcRaw = await call(client.sessions.getPairCode(row.session_id))
-          await recordShape(row.session_id, 'debug:pair', pcRaw)
-          const pc = unwrap(pcRaw)
-          pairCode = text(pc.pairCode) ?? text(pc.code) ?? text(state.pairCode) ?? null
-          if (pairCode) status = 'pair_code_ready'
-        } else {
-          const qrRaw = await call(client.sessions.getQRCode(row.session_id))
-          await recordShape(row.session_id, 'debug:qr', qrRaw)
-          qrImage = (await qrImageFrom(unwrap(qrRaw))) ?? (await qrImageFrom(state))
-          if (qrImage) status = 'qr_ready'
-        }
-      } catch (err) {
-        // Not ready yet: keep polling.
-        console.warn('[dapi] pairing data not ready:', (err as Error).message)
-      }
-    }
-
-    return NextResponse.json({
+    const manager = hasMinRole(role, 'admin')
+    const canConnect = hasMinRole(role, 'agent')
+    const base = {
       enabled: true,
+      can_connect: canConnect,
+      can_manage: manager,
+      max_numbers: await maxNumbers(accountId),
+    }
+    if (!hasDapiApiKey()) {
+      return NextResponse.json({ ...base, configured: false, numbers: await listNumbers(accountId, userId, manager), session: null })
+    }
+
+    const row = canConnect ? await ownSession(accountId, userId) : null
+    const session = row ? await sessionState(request, accountId, userId, row) : { session: null, sync_error: null }
+    return NextResponse.json({
+      ...base,
       configured: true,
-      session: { status, phone, qr_image: qrImage, pair_code: pairCode },
-      sync_error: syncError,
+      numbers: await listNumbers(accountId, userId, manager),
+      ...session,
     })
   } catch (err) {
     return dapiFailure(err)
   }
 }
 
+/** Live status of the caller's session; saves it once connected. */
+async function sessionState(
+  request: Request,
+  accountId: string,
+  userId: string,
+  row: { session_id: string; status: string; phone: string | null },
+) {
+  const client = dapiClient()
+  let raw: unknown
+  try {
+    raw = await call(client.sessions.get(row.session_id))
+  } catch (err) {
+    if ((err as { status?: number }).status === 404) {
+      // Gone on D-API's side (or never created): back to the connect form.
+      await markDapiDisconnected(supabaseAdmin(), row.session_id)
+      return { session: null, sync_error: null }
+    }
+    throw err
+  }
+  const state = unwrap(raw)
+  let status = normalizeStatus(state.status ?? state.state ?? state.connectionStatus)
+
+  let syncError: string | null = null
+  let qrImage: string | null = null
+  let pairCode: string | null = null
+  const auth = isObj(state.authData) ? state.authData : {}
+  const phone =
+    phoneDigits(text(state.phone) ?? text(auth.phone) ?? text(auth.jid) ?? text(state.phoneNumber) ?? text(state.wid)) ??
+    row.phone ??
+    null
+
+  if (status === 'connected') {
+    // Sessions paired before webhooks were switched on (or that lost
+    // their config): issue a fresh secret URL and enable the events.
+    const settings = isObj(state.settings) ? state.settings : {}
+    const hook = isObj(settings.webhook) ? settings.webhook : null
+    if (!(hook && hook.enabled === true)) {
+      try {
+        const { url, hash } = await newWebhookUrl(siteOrigin(request))
+        await supabaseAdmin().from('dapi_sessions').update({ webhook_token_hash: hash }).eq('session_id', row.session_id)
+        await enableWebhook(client, row.session_id, url)
+      } catch (err) {
+        console.error('[dapi] enabling webhook failed:', (err as Error).message)
+      }
+    }
+    syncError = await saveDapiConnection(supabaseAdmin(), {
+      accountId,
+      ownerUserId: userId,
+      sessionId: row.session_id,
+      phone,
+    })
+  } else if (status === 'disconnected') {
+    if (row.status !== 'disconnected') await markDapiDisconnected(supabaseAdmin(), row.session_id)
+  } else {
+    // Still pairing: ask for the QR (or pair code) whatever the status word says.
+    const pairMode = state.connectionMode === 'pair' || status === 'pair_code_ready'
+    try {
+      if (pairMode) {
+        const pc = unwrap(await call(client.sessions.getPairCode(row.session_id)))
+        pairCode = text(pc.pairCode) ?? text(pc.code) ?? text(state.pairCode) ?? null
+        if (pairCode) status = 'pair_code_ready'
+      } else {
+        const qrRaw = await call(client.sessions.getQRCode(row.session_id))
+        qrImage = (await qrImageFrom(unwrap(qrRaw))) ?? (await qrImageFrom(state))
+        if (qrImage) status = 'qr_ready'
+      }
+    } catch (err) {
+      // Not ready yet: keep polling.
+      console.warn('[dapi] pairing data not ready:', (err as Error).message)
+    }
+  }
+
+  return {
+    session: { status, phone, qr_image: qrImage, pair_code: pairCode },
+    sync_error: syncError,
+  }
+}
+
 export async function POST(request: Request) {
   try {
-    const { accountId, userId, account } = await requireRole('admin')
+    const { accountId, userId, account } = await requireRole('agent')
     if (account.plan !== 'starter') return NextResponse.json({ error: STARTER_ONLY }, { status: 403 })
     if (!hasDapiApiKey()) {
       return NextResponse.json({ error: 'DAPI_API_KEY não configurada no servidor.' }, { status: 400 })
@@ -285,12 +379,27 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Informe o número com DDI e DDD, ex.: 5571999999999.' }, { status: 400 })
     }
 
-    const client = dapiClient()
-    const { data: previous } = await supabaseAdmin()
-      .from('dapi_sessions')
-      .select('session_id')
+    // A member who has no number yet takes a new slot: check the limit
+    // before pairing, so nobody scans a QR code that cannot be saved.
+    const admin = supabaseAdmin()
+    const { data: mine } = await admin
+      .from('whatsapp_config')
+      .select('id')
       .eq('account_id', accountId)
+      .eq('owner_user_id', userId)
       .maybeSingle()
+    if (!mine) {
+      const { count } = await admin
+        .from('whatsapp_config')
+        .select('id', { count: 'exact', head: true })
+        .eq('account_id', accountId)
+      if ((count ?? 0) >= (await maxNumbers(accountId))) {
+        return NextResponse.json({ error: NUMBER_LIMIT_MESSAGE }, { status: 400 })
+      }
+    }
+
+    const client = dapiClient()
+    const previous = await ownSession(accountId, userId)
 
     if (previous) {
       try {
@@ -298,9 +407,9 @@ export async function POST(request: Request) {
         // Already connected: nothing to start, just make sure it is saved.
         if (normalizeStatus(current.status ?? current.state) === 'connected') {
           const phone = phoneDigits(text(current.phone))
-          const syncError = await saveDapiConnection(supabaseAdmin(), {
+          const syncError = await saveDapiConnection(admin, {
             accountId,
-            userId,
+            ownerUserId: userId,
             sessionId: previous.session_id,
             phone,
           })
@@ -311,6 +420,7 @@ export async function POST(request: Request) {
       } catch (err) {
         if ((err as { status?: number }).status !== 404) throw err
       }
+      await admin.from('dapi_sessions').delete().eq('session_id', previous.session_id)
     }
 
     const sessionId = dapiSessionIdFor(accountId)
@@ -319,19 +429,18 @@ export async function POST(request: Request) {
     const hook = await newWebhookUrl(siteOrigin(request))
     const now = new Date().toISOString()
 
-    const { error: saveError } = await supabaseAdmin()
-      .from('dapi_sessions')
-      .upsert({
-        account_id: accountId,
-        session_id: sessionId,
-        webhook_token_hash: hook.hash,
-        status: 'connecting',
-        phone: null,
-        risk_accepted_at: now,
-        risk_accepted_by: userId,
-        created_by: userId,
-        updated_at: now,
-      })
+    const { error: saveError } = await admin.from('dapi_sessions').insert({
+      account_id: accountId,
+      owner_user_id: userId,
+      session_id: sessionId,
+      webhook_token_hash: hook.hash,
+      status: 'connecting',
+      phone: null,
+      risk_accepted_at: now,
+      risk_accepted_by: userId,
+      created_by: userId,
+      updated_at: now,
+    })
     if (saveError) {
       console.error('[dapi] failed to store session:', saveError.message)
       return NextResponse.json({ error: 'Não foi possível salvar a sessão.' }, { status: 500 })
@@ -363,22 +472,90 @@ export async function POST(request: Request) {
   }
 }
 
-export async function DELETE() {
+/** Load a number of the caller's account and check the caller may manage it. */
+async function manageableNumber(accountId: string, userId: string, manager: boolean, channelId: string | null) {
+  let query = supabaseAdmin()
+    .from('whatsapp_config')
+    .select('id, owner_user_id, phone_number_id, status, is_default')
+    .eq('account_id', accountId)
+  query = channelId ? query.eq('id', channelId) : query.eq('owner_user_id', userId)
+  const { data } = await query.maybeSingle()
+  const row = data as { id: string; owner_user_id: string | null; phone_number_id: string; status: string; is_default: boolean } | null
+  if (!row) return { error: NextResponse.json({ error: 'Número não encontrado.' }, { status: 404 }) }
+  if (!manager && row.owner_user_id !== userId) {
+    return { error: NextResponse.json({ error: 'Você só pode alterar o seu próprio número.' }, { status: 403 }) }
+  }
+  return { row }
+}
+
+export async function PATCH(request: Request) {
   try {
-    const { accountId } = await requireRole('admin')
-    const { data: row } = await supabaseAdmin()
-      .from('dapi_sessions')
-      .select('session_id')
-      .eq('account_id', accountId)
-      .maybeSingle()
-    if (row && hasDapiApiKey()) {
+    const { accountId, userId, role, account } = await requireRole('agent')
+    if (account.plan !== 'starter') return NextResponse.json({ error: STARTER_ONLY }, { status: 403 })
+    const manager = hasMinRole(role, 'admin')
+    const body = (await request.json().catch(() => ({}))) as {
+      channel_id?: string
+      label?: string | null
+      is_default?: boolean
+    }
+    const found = await manageableNumber(accountId, userId, manager, body.channel_id ?? null)
+    if ('error' in found) return found.error
+
+    const admin = supabaseAdmin()
+    if (typeof body.label === 'string' || body.label === null) {
+      const label = typeof body.label === 'string' ? body.label.trim().slice(0, 60) || null : null
+      await admin.from('whatsapp_config').update({ label }).eq('id', found.row.id)
+    }
+    if (body.is_default === true && !found.row.is_default) {
+      if (!manager) return NextResponse.json({ error: 'Só dono e admin definem o número padrão.' }, { status: 403 })
+      // One default per account (unique index): clear it first.
+      await admin.from('whatsapp_config').update({ is_default: false }).eq('account_id', accountId).eq('is_default', true)
+      await admin.from('whatsapp_config').update({ is_default: true }).eq('id', found.row.id)
+    }
+    return NextResponse.json({ ok: true })
+  } catch (err) {
+    return dapiFailure(err)
+  }
+}
+
+export async function DELETE(request: Request) {
+  try {
+    const { accountId, userId, role } = await requireRole('agent')
+    const manager = hasMinRole(role, 'admin')
+    const params = new URL(request.url).searchParams
+    const found = await manageableNumber(accountId, userId, manager, params.get('channel_id'))
+    if ('error' in found) return found.error
+    const remove = params.get('remove') === '1'
+    if (remove && !manager) {
+      return NextResponse.json({ error: 'Só dono e admin removem números.' }, { status: 403 })
+    }
+
+    const admin = supabaseAdmin()
+    const sessionId = found.row.phone_number_id.replace(/^dapi:/, '')
+    if (found.row.phone_number_id.startsWith('dapi:') && hasDapiApiKey()) {
       try {
-        await dapiClient().sessions.delete(row.session_id)
+        await call(dapiClient().sessions.delete(sessionId))
       } catch (err) {
         if ((err as { status?: number }).status !== 404) throw err
       }
     }
-    await markDapiDisconnected(supabaseAdmin(), accountId)
+    await markDapiDisconnected(admin, sessionId)
+
+    if (remove) {
+      // Frees the slot. Messages keep their text; their number tag is lost.
+      await admin.from('dapi_sessions').delete().eq('session_id', sessionId)
+      await admin.from('whatsapp_config').delete().eq('id', found.row.id)
+      if (found.row.is_default) {
+        const { data: next } = await admin
+          .from('whatsapp_config')
+          .select('id')
+          .eq('account_id', accountId)
+          .order('created_at', { ascending: true })
+          .limit(1)
+          .maybeSingle()
+        if (next) await admin.from('whatsapp_config').update({ is_default: true }).eq('id', (next as { id: string }).id)
+      }
+    }
     return NextResponse.json({ ok: true })
   } catch (err) {
     return dapiFailure(err)

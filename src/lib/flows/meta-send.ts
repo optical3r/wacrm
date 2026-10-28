@@ -8,7 +8,7 @@ import {
   type MediaKind,
 } from '@/lib/whatsapp/meta-api'
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive'
-import { decrypt } from '@/lib/whatsapp/encryption'
+import { ChannelError, resolveSendChannel } from '@/lib/whatsapp/channels'
 import {
   phoneVariants,
   isRecipientNotAllowedError,
@@ -44,18 +44,22 @@ const t = getT('LibErrors')
 export async function loadAccountMetaCredentials(
   db: ReturnType<typeof supabaseAdmin>,
   accountId: string,
-): Promise<{ phoneNumberId: string; accessToken: string }> {
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('phone_number_id, access_token')
-    .eq('account_id', accountId)
-    .single()
-  if (configErr || !config) {
-    throw new Error(t('send.notConfigured'))
-  }
-  return {
-    phoneNumberId: config.phone_number_id,
-    accessToken: decrypt(config.access_token),
+  // Starter accounts can have several numbers: the conversation decides
+  // which one answers (see channels.ts). Omitted → the default number.
+  conversationId?: string | null,
+): Promise<{ phoneNumberId: string; accessToken: string; channelId: string }> {
+  try {
+    const resolved = await resolveSendChannel(db, accountId, { conversationId })
+    return {
+      phoneNumberId: resolved.phoneNumberId,
+      accessToken: resolved.accessToken,
+      channelId: resolved.channelId,
+    }
+  } catch (err) {
+    if (err instanceof ChannelError && err.code === 'whatsapp_not_configured') {
+      throw new Error(t('send.notConfigured'))
+    }
+    throw err
   }
 }
 
@@ -118,9 +122,10 @@ export async function engineSendText(
   }
   const sanitized = sendTarget.target
 
-  const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
+  const { phoneNumberId, accessToken, channelId } = await loadAccountMetaCredentials(
     db,
     args.accountId,
+    args.conversationId,
   )
 
   const attempt = async (phone: string): Promise<string> => {
@@ -156,6 +161,7 @@ export async function engineSendText(
   }
 
   const { error: msgErr } = await db.from('messages').insert({
+    channel_id: channelId,
     conversation_id: args.conversationId,
     sender_type: 'bot',
     content_type: 'text',
@@ -232,9 +238,10 @@ export async function engineSendMedia(
   }
   const sanitized = sendTarget.target
 
-  const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
+  const { phoneNumberId, accessToken, channelId } = await loadAccountMetaCredentials(
     db,
     args.accountId,
+    args.conversationId,
   )
 
   const attempt = async (phone: string): Promise<string> => {
@@ -278,6 +285,7 @@ export async function engineSendMedia(
   // list preview shows something meaningful when the user glances at it.
   const preview = args.caption?.trim() || `[${args.kind}]`
   const { error: msgErr } = await db.from('messages').insert({
+    channel_id: channelId,
     conversation_id: args.conversationId,
     sender_type: 'bot',
     content_type: args.kind,
@@ -388,9 +396,10 @@ async function sendInteractiveViaMeta(
   }
   const sanitized = sendTarget.target
 
-  const { phoneNumberId, accessToken } = await loadAccountMetaCredentials(
+  const { phoneNumberId, accessToken, channelId } = await loadAccountMetaCredentials(
     db,
     input.accountId,
+    input.conversationId,
   )
 
   const attempt = async (phone: string): Promise<string> => {
@@ -474,6 +483,7 @@ async function sendInteractiveViaMeta(
         }
 
   const { error: msgErr } = await db.from('messages').insert({
+    channel_id: channelId,
     conversation_id: input.conversationId,
     sender_type: 'bot',
     content_type: 'interactive',

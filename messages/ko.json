@@ -351,6 +351,18 @@
       "resumed": "AI가 재개되었습니다.",
       "updateError": "AI 어시스턴트를 업데이트하지 못했습니다.",
       "networkError": "서버에 연결할 수 없습니다."
+    },
+    "channel": {
+      "unnamed": "이름 없는 번호",
+      "via": "{name} 번호",
+      "senderVia": "{sender} · {name} 번호",
+      "sendingBy": "보내는 번호:",
+      "pickLabel": "보내는 번호",
+      "noOwnNumber": "답장하려면 설정 › WhatsApp에서 내 WhatsApp을 연결하세요.",
+      "disconnected": "이 번호는 연결이 끊겼습니다. 답장하려면 설정에서 WhatsApp을 다시 연결하세요.",
+      "allNumbers": "모든 번호",
+      "mine": "내 대화",
+      "byNumber": "번호"
     }
   },
   "Contacts": {
@@ -1437,7 +1449,8 @@
       "fieldsCount": "커스텀 필드 {count}개",
       "appearance": "{mode} 모드 · {theme} 색상",
       "yourAccount": "내 계정",
-      "loading": "불러오는 중…"
+      "loading": "불러오는 중…",
+      "numbersConnected": "{total}개 중 {connected}개 번호 연결됨"
     },
     "members": {
       "title": "팀원",
@@ -2048,8 +2061,8 @@
       "connectFailed": "Could not start the connection."
     },
     "dapi": {
-      "title": "Connect WhatsApp by QR code",
-      "description": "On the Starter plan the number connects through WhatsApp on the phone by scanning a QR code, like WhatsApp Web.",
+      "title": "내 WhatsApp",
+      "description": "팀원마다 휴대폰 WhatsApp에서 QR 코드를 스캔해 자신의 번호를 연결합니다(WhatsApp Web과 동일). 모든 번호의 대화가 같은 받은편지함에 모입니다.",
       "connect": "Generate QR code",
       "reconnect": "Connect again",
       "checkAgain": "Check connection",
@@ -2075,8 +2088,27 @@
       "pairSteps": "On the phone, open WhatsApp > Linked devices > Link a device > Link with phone number and type this code.",
       "notConfiguredTitle": "QR code connection unavailable",
       "notConfiguredDesc": "The server is missing DAPI_API_KEY. Contact the platform administrator.",
-      "adminOnly": "Only account admins can connect WhatsApp.",
-      "sessionLost": "The connection session expired. Click Generate QR code again."
+      "adminOnly": "뷰어는 번호를 연결할 수 없습니다. 관리자에게 역할 변경을 요청하세요.",
+      "sessionLost": "The connection session expired. Click Generate QR code again.",
+      "limitTitle": "번호 한도 도달",
+      "limitDesc": "이 계정은 이미 요금제의 번호 {max}개를 모두 사용 중입니다. 관리자에게 연결 끊긴 번호 삭제나 한도 증가를 요청하세요.",
+      "numbersTitle": "계정 번호",
+      "numbersDesc": "{max}개 중 {count}개 번호 사용 중. 상담원은 각자 자신의 번호로 답장합니다.",
+      "numbersDescOwn": "연결된 내 번호.",
+      "noNumbers": "아직 연결된 번호가 없습니다.",
+      "unknownOwner": "소유자 없음",
+      "you": "나",
+      "defaultBadge": "기본",
+      "statusConnected": "연결됨",
+      "statusDisconnected": "연결 끊김",
+      "noPhone": "아직 확인되지 않은 번호",
+      "ownerLine": "{name}의 번호",
+      "rename": "이름 변경",
+      "renamePrompt": "번호 이름 (예: 영업 Ana):",
+      "makeDefault": "기본으로 설정",
+      "remove": "삭제",
+      "removeConfirm": "이 번호를 계정에서 삭제할까요? 자리가 비워집니다. 대화는 남지만 메시지의 번호 표시는 사라집니다.",
+      "saveFailed": "저장하지 못했습니다."
     }
   },
   "SignupPage": {
@@ -2812,7 +2844,8 @@
     "whatsapp": {
       "connected": "Connected",
       "disconnected": "Disconnected",
-      "none": "Not connected"
+      "none": "Not connected",
+      "numbers": "{max}개 중 {connected}개 번호 연결됨"
     },
     "cols": {
       "organization": "Organization",
@@ -2832,7 +2865,8 @@
       "unblock": "Unblock",
       "toStarter": "Switch to Starter",
       "toPro": "Switch to Pro",
-      "disconnect": "Disconnect WhatsApp"
+      "disconnect": "Disconnect WhatsApp",
+      "setLimit": "한도 변경"
     },
     "done": {
       "approve": "{name} approved.",
@@ -2840,7 +2874,8 @@
       "block": "{name} blocked.",
       "unblock": "{name} unblocked.",
       "set_plan": "{name}'s plan changed.",
-      "disconnect_whatsapp": "{name}'s WhatsApp disconnected."
+      "disconnect_whatsapp": "{name}'s WhatsApp disconnected.",
+      "set_max_numbers": "{name}의 번호 한도가 변경되었습니다."
     },
     "confirm": {
       "reject": {
@@ -2859,7 +2894,9 @@
         "title": "Disconnect {name}'s WhatsApp?",
         "desc": "The number stops sending and receiving until the organization connects again."
       }
-    }
+    },
+    "limitPrompt": "{name}의 번호 한도 (1~50):",
+    "limitInvalid": "1에서 50 사이의 정수를 입력하세요."
   },
   "AccountStatusGate": {
     "pendingTitle": "Signup under review",

@@ -41,7 +41,8 @@ interface AdminAccount {
   conversations_30d: number;
   messages_30d: number;
   last_message_at: string | null;
-  whatsapp: { status: string; connected_at: string | null } | null;
+  max_numbers: number;
+  whatsapp: { status: string; connected_at: string | null; connected: number; total: number } | null;
 }
 
 type Action =
@@ -50,7 +51,8 @@ type Action =
   | { action: "block" }
   | { action: "unblock" }
   | { action: "set_plan"; plan: Plan }
-  | { action: "disconnect_whatsapp" };
+  | { action: "disconnect_whatsapp" }
+  | { action: "set_max_numbers"; max_numbers: number };
 
 // Actions that cut access or a connection ask first.
 const CONFIRM: Partial<Record<Action["action"], true>> = {
@@ -283,9 +285,32 @@ export default function AdminPage() {
                         <Badge variant="outline">{t(`plan.${a.plan}`)}</Badge>
                       </TableCell>
                       <TableCell className="text-sm">
-                        {a.whatsapp
-                          ? t(`whatsapp.${a.whatsapp.status === "connected" ? "connected" : "disconnected"}`)
-                          : t("whatsapp.none")}
+                        {a.plan === "starter" ? (
+                          <>
+                            <p>{t("whatsapp.numbers", { connected: a.whatsapp?.connected ?? 0, max: a.max_numbers })}</p>
+                            <button
+                              type="button"
+                              className="text-xs text-primary underline-offset-2 hover:underline disabled:opacity-50"
+                              disabled={busy}
+                              onClick={() => {
+                                const answer = window.prompt(t("limitPrompt", { name: a.name }), String(a.max_numbers));
+                                if (answer === null) return;
+                                const n = Number(answer);
+                                if (!Number.isInteger(n) || n < 1 || n > 50) {
+                                  toast.error(t("limitInvalid"));
+                                  return;
+                                }
+                                if (n !== a.max_numbers) ask(a, { action: "set_max_numbers", max_numbers: n });
+                              }}
+                            >
+                              {t("actions.setLimit")}
+                            </button>
+                          </>
+                        ) : a.whatsapp ? (
+                          t(`whatsapp.${a.whatsapp.status === "connected" ? "connected" : "disconnected"}`)
+                        ) : (
+                          t("whatsapp.none")
+                        )}
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{a.members}</TableCell>
                       <TableCell className="text-right text-xs tabular-nums text-muted-foreground">

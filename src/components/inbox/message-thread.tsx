@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useAuth } from "@/hooks/use-auth";
+import { useChannels } from "@/hooks/use-channels";
+import { pickSendChannel, type ChannelError } from "@/lib/whatsapp/channel-pick";
 import { usePresence } from "@/hooks/use-presence";
 import { PresenceDot } from "@/components/presence/presence-dot";
 import { presenceLabel } from "@/lib/presence";
@@ -169,9 +171,55 @@ export function MessageThread({
   const tTimer = useTranslations("Inbox.sessionTimer");
   const tQuote = useTranslations("Inbox.replyQuote");
 
-  const { user, account } = useAuth();
+  const { user, account, isAgent, canSendMessages } = useAuth();
   // Starter (QR code via D-API) has no Meta 24h service window.
   const noServiceWindow = account?.plan === "starter";
+  const tChannel = useTranslations("Inbox.channel");
+
+  // Starter accounts can have one WhatsApp number per member (migration
+  // 051). Agents always send through their own; owner / admin pick one,
+  // defaulting to the number of the agent responsible for the chat.
+  const { channels } = useChannels(tChannel("unnamed"));
+  const multiNumber = noServiceWindow && channels.length > 1;
+  const [channelChoice, setChannelChoice] = useState<{ conversationId: string; channelId: string } | null>(null);
+  const chosenChannelId =
+    conversation && channelChoice?.conversationId === conversation.id ? channelChoice.channelId : null;
+  const sendChannel = useMemo(() => {
+    if (!noServiceWindow || channels.length === 0 || !canSendMessages) {
+      return { channel: null, blocked: null as string | null };
+    }
+    try {
+      const channel = pickSendChannel(channels, {
+        plan: "starter",
+        role: isAgent ? "agent" : "admin",
+        userId: user?.id ?? null,
+        requestedChannelId: isAgent ? null : chosenChannelId,
+        assignedAgentId: conversation?.assigned_agent_id ?? null,
+        lastChannelId: conversation?.last_channel_id ?? null,
+      });
+      return { channel, blocked: null as string | null };
+    } catch (err) {
+      const code = (err as ChannelError).code;
+      return {
+        channel: null,
+        blocked: code === "no_own_channel" ? tChannel("noOwnNumber") : tChannel("disconnected"),
+      };
+    }
+  }, [
+    noServiceWindow,
+    channels,
+    canSendMessages,
+    isAgent,
+    user?.id,
+    chosenChannelId,
+    conversation?.assigned_agent_id,
+    conversation?.last_channel_id,
+    tChannel,
+  ]);
+  // Read by the send handlers without re-creating them on every change.
+  const sendChannelIdRef = useRef<string | null>(null);
+  sendChannelIdRef.current = !isAgent && multiNumber ? (sendChannel.channel?.id ?? null) : null;
+  const channelNameById = useMemo(() => new Map(channels.map((c) => [c.id, c])), [channels]);
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -492,6 +540,8 @@ export function MessageThread({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             conversation_id: conversation.id,
+            // Owner / admin's pick on Starter; agents always use their own number.
+            channel_id: sendChannelIdRef.current ?? undefined,
             message_type: "text",
             content_text: text,
             reply_to_message_id: replyToId,
@@ -556,6 +606,8 @@ export function MessageThread({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             conversation_id: conversation.id,
+            // Owner / admin's pick on Starter; agents always use their own number.
+            channel_id: sendChannelIdRef.current ?? undefined,
             message_type: payload.kind,
             media_url: payload.mediaUrl,
             content_text: contentText,
@@ -615,6 +667,8 @@ export function MessageThread({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             conversation_id: conversation.id,
+            // Owner / admin's pick on Starter; agents always use their own number.
+            channel_id: sendChannelIdRef.current ?? undefined,
             message_type: "interactive",
             interactive_payload: payload,
             reply_to_message_id: replyToId,
@@ -693,6 +747,8 @@ export function MessageThread({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             conversation_id: conversation.id,
+            // Owner / admin's pick on Starter; agents always use their own number.
+            channel_id: sendChannelIdRef.current ?? undefined,
             message_type: "template",
             template_name: template.name,
             template_language: template.language,
@@ -890,6 +946,45 @@ export function MessageThread({
   );
   const assignedAgentId = conversation.assigned_agent_id ?? null;
   const currentAssignee = profiles.find((p) => p.user_id === assignedAgentId);
+
+  // "via Ana", or "Rodrigo via Ana" when someone else answered through
+  // Ana's number. Only when the account has several numbers.
+  const channelLabelFor = (msg: Message): string | null => {
+    if (!multiNumber || !msg.channel_id) return null;
+    const channel = channelNameById.get(msg.channel_id);
+    if (!channel) return null;
+    const sender =
+      msg.sender_type === "agent" && msg.sender_id && msg.sender_id !== channel.owner_user_id
+        ? profiles.find((p) => p.user_id === msg.sender_id)?.full_name
+        : null;
+    return sender
+      ? tChannel("senderVia", { sender, name: channel.name })
+      : tChannel("via", { name: channel.name });
+  };
+
+  const connectedChannels = channels.filter((c) => c.status === "connected");
+  const channelBar =
+    multiNumber && sendChannel.channel ? (
+      <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
+        <span>{tChannel("sendingBy")}</span>
+        {isAgent || connectedChannels.length < 2 ? (
+          <span className="font-medium text-foreground">{sendChannel.channel.name}</span>
+        ) : (
+          <select
+            aria-label={tChannel("pickLabel")}
+            className="rounded-md border border-border bg-muted px-2 py-1 text-xs text-foreground"
+            value={sendChannel.channel.id}
+            onChange={(e) => setChannelChoice({ conversationId: conversation.id, channelId: e.target.value })}
+          >
+            {connectedChannels.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </select>
+        )}
+      </div>
+    ) : null;
   const assignLabel = assignedAgentId
     ? (currentAssignee?.full_name ?? t("assigned"))
     : t("assign");
@@ -1146,6 +1241,7 @@ export function MessageThread({
                       >
                         <MessageBubble
                           message={msg}
+                          channelLabel={channelLabelFor(msg)}
                           reply={reply}
                           reactions={msgReactions}
                           currentUserId={user?.id}
@@ -1188,6 +1284,8 @@ export function MessageThread({
         onOpenTemplates={handleOpenTemplates}
         replyTo={replyTo}
         onClearReply={() => setReplyTo(null)}
+        blockedReason={sendChannel.blocked}
+        channelBar={channelBar}
       />
 
       <TemplatePicker

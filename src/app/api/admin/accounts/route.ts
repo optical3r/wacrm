@@ -16,7 +16,7 @@ export async function GET() {
     const [accountsRes, profilesRes, configsRes, statsRes] = await Promise.all([
       admin
         .from("accounts")
-        .select("id, name, plan, status, owner_user_id, created_at, status_changed_at")
+        .select("id, name, plan, status, owner_user_id, created_at, status_changed_at, max_numbers")
         .order("created_at", { ascending: false }),
       admin.from("profiles").select("user_id, email, full_name, account_id"),
       admin
@@ -42,14 +42,24 @@ export async function GET() {
     };
 
     const profiles = (profilesRes.data ?? []) as Profile[];
-    const configs = new Map(((configsRes.data ?? []) as Config[]).map((c) => [c.account_id, c]));
+    // Several numbers per Starter account (migration 051).
+    const configs = new Map<string, Config[]>();
+    for (const c of (configsRes.data ?? []) as Config[]) {
+      configs.set(c.account_id, [...(configs.get(c.account_id) ?? []), c]);
+    }
     const stats = new Map(((statsRes.data ?? []) as Stat[]).map((s) => [s.account_id, s]));
 
     const accounts = (accountsRes.data ?? [])
       .map((a) => {
         const owner = profiles.find((p) => p.user_id === a.owner_user_id);
         const stat = stats.get(a.id);
-        const config = configs.get(a.id);
+        const numbers = configs.get(a.id) ?? [];
+        const connected = numbers.filter((c) => c.status === "connected");
+        const lastConnected = connected
+          .map((c) => c.connected_at)
+          .filter(Boolean)
+          .sort()
+          .pop() ?? null;
         return {
           id: a.id as string,
           name: a.name as string,
@@ -63,8 +73,14 @@ export async function GET() {
           conversations_30d: stat?.conversations_30d ?? 0,
           messages_30d: stat?.messages_30d ?? 0,
           last_message_at: stat?.last_message_at ?? null,
-          whatsapp: config
-            ? { status: config.status, connected_at: config.connected_at }
+          max_numbers: (a.max_numbers as number | null) ?? 5,
+          whatsapp: numbers.length
+            ? {
+                status: connected.length ? "connected" : "disconnected",
+                connected_at: lastConnected,
+                connected: connected.length,
+                total: numbers.length,
+              }
             : null,
         };
       })

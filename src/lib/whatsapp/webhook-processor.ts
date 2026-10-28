@@ -22,6 +22,7 @@ import { loadCoexyWebhookSecrets } from '@/lib/whatsapp/coexy'
 import { resumeAwaitingReply, runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
 import { dispatchInboundToAiReply } from '@/lib/ai/auto-reply'
+import { loadAiConfig } from '@/lib/ai/config'
 import { dispatchWebhookEvent } from '@/lib/webhooks/deliver'
 import {
   handleTemplateWebhookChange,
@@ -384,7 +385,9 @@ export async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // Default ON: the column is NOT NULL DEFAULT TRUE, but a row
           // read before migration 039 lands would have it undefined,
           // and losing attachments is the failure mode worth avoiding.
-          config.mirror_inbound_media !== false
+          config.mirror_inbound_media !== false,
+          // The number the customer wrote to (migration 051).
+          { id: config.id, ownerUserId: config.owner_user_id ?? null }
         )
       }
     }
@@ -467,6 +470,9 @@ async function handleMessageEchoes(value: MessageEchoesValue) {
           message_id: echo.id,
           status: 'sent',
           created_at: sentAt,
+          // Typed on the phone of this number's owner (migration 051).
+          channel_id: config.id,
+          sender_id: config.owner_user_id ?? null,
         },
         { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
       )
@@ -795,7 +801,9 @@ async function processMessage(
   accessToken: string,
   // Per-account opt-out for the inbound-media mirror (migration 039).
   // See parseMessageContent for what it turns off.
-  mirrorMedia: boolean
+  mirrorMedia: boolean,
+  // The number (whatsapp_config row) the message came in through.
+  channel: InboundChannel
 ) {
   // Phone number OR business-scoped user ID — Meta sends only the
   // latter for a sender who has adopted a WhatsApp username (#519).
@@ -936,6 +944,8 @@ async function processMessage(
         // the column; null for every other content_type so existing inserts
         // behave identically.
         interactive_reply_id: interactiveReplyId,
+        // A trigger (migration 051) records it on the conversation too.
+        channel_id: channel.id,
       },
       { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
     )
@@ -982,6 +992,8 @@ async function processMessage(
   // update above so the write can be gated on the row's CURRENT status in
   // SQL — see the helper for why that matters.
   await reopenClosedConversation(supabaseAdmin(), conversation)
+
+  await assignToChannelOwner(accountId, conversation, channel)
 
   // If this contact was a recent broadcast recipient, flag the reply
   // so the broadcast's `replied_count` advances (via the aggregate
@@ -1526,6 +1538,38 @@ async function findOrCreateContact(
   }
 
   return { contact: newContact, wasCreated: true }
+}
+
+interface InboundChannel {
+  id: string
+  ownerUserId: string | null
+}
+
+/**
+ * Starter accounts with several numbers: a chat nobody owns goes to the
+ * member whose number the customer wrote to. Skipped when the AI
+ * auto-reply is on, since the bot only answers unassigned chats.
+ */
+async function assignToChannelOwner(
+  accountId: string,
+  conversation: { id: string; assigned_agent_id?: string | null },
+  channel: InboundChannel
+) {
+  if (!channel.ownerUserId || conversation.assigned_agent_id) return
+  try {
+    const db = supabaseAdmin()
+    const { data: account } = await db.from('accounts').select('plan').eq('id', accountId).maybeSingle()
+    if (account?.plan !== 'starter') return
+    const ai = await loadAiConfig(db, accountId)
+    if (ai?.autoReplyEnabled) return
+    await db
+      .from('conversations')
+      .update({ assigned_agent_id: channel.ownerUserId })
+      .eq('id', conversation.id)
+      .is('assigned_agent_id', null)
+  } catch (err) {
+    console.warn('[webhook] assign to number owner failed:', err instanceof Error ? err.message : err)
+  }
 }
 
 async function findOrCreateConversation(

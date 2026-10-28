@@ -39,7 +39,7 @@ export async function POST(request: Request) {
 
   const { data: session } = await supabaseAdmin()
     .from('dapi_sessions')
-    .select('account_id, session_id, status, created_by')
+    .select('account_id, session_id, status, created_by, owner_user_id')
     .eq('webhook_token_hash', createHash('sha256').update(token).digest('hex'))
     .maybeSingle()
   if (!session) return NextResponse.json({ error: 'unauthorized' }, { status: 401 })
@@ -61,6 +61,7 @@ interface SessionRow {
   session_id: string
   status: string
   created_by: string | null
+  owner_user_id: string | null
 }
 
 async function handle(session: SessionRow, payload: unknown) {
@@ -114,12 +115,12 @@ async function applyConnection(
   connection: NonNullable<ReturnType<typeof translateDapiWebhook>['connection']>,
 ) {
   const admin = supabaseAdmin()
-  if (connection.status === 'disconnected') return markDapiDisconnected(admin, session.account_id)
+  if (connection.status === 'disconnected') return markDapiDisconnected(admin, session.session_id)
   if (connection.status === 'connected') {
     // Connected while nobody had the settings page open: save it here too.
     await saveDapiConnection(admin, {
       accountId: session.account_id,
-      userId: session.created_by,
+      ownerUserId: session.owner_user_id ?? session.created_by,
       sessionId: session.session_id,
       phone: connection.phone ?? null,
     })
@@ -128,5 +129,5 @@ async function applyConnection(
   await admin
     .from('dapi_sessions')
     .update({ status: connection.status, updated_at: new Date().toISOString() })
-    .eq('account_id', session.account_id)
+    .eq('session_id', session.session_id)
 }

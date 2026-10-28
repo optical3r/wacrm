@@ -204,6 +204,9 @@ function InboxPageInner() {
         .from("whatsapp_config")
         .select("status")
         .eq("account_id", accountId)
+        // Any connected number (Starter accounts can have several).
+        .eq("status", "connected")
+        .limit(1)
         .maybeSingle();
 
       setWhatsappConnected(data?.status === "connected");

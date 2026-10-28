@@ -34,7 +34,7 @@ import {
   interactivePayloadPreviewText,
   type InteractiveMessagePayload,
 } from '@/lib/whatsapp/interactive';
-import { decrypt, encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
+import { encrypt, isLegacyFormat } from '@/lib/whatsapp/encryption';
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import {
   phoneVariants,
@@ -42,6 +42,8 @@ import {
 } from '@/lib/whatsapp/phone-utils';
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity';
 import type { MessageTemplate } from '@/types';
+import type { AccountRole } from '@/lib/auth/roles';
+import { ChannelError, resolveSendChannel } from '@/lib/whatsapp/channels';
 import {
   resolveTemplateRow,
   templateBodyParams,
@@ -87,6 +89,11 @@ export interface SendMessageParams {
   /** Structured payload for `messageType === 'interactive'`. */
   interactivePayload?: InteractiveMessagePayload | null;
   replyToMessageId?: string | null;
+  /** Member sending (dashboard). Unset for the public API. */
+  senderUserId?: string | null;
+  senderRole?: AccountRole | null;
+  /** Number chosen in the composer (owner / admin on Starter). */
+  channelId?: string | null;
 }
 
 export interface SendMessageResult {
@@ -200,6 +207,9 @@ export async function sendMessageToConversation(
     templateMessageParams,
     interactivePayload,
     replyToMessageId,
+    senderUserId,
+    senderRole,
+    channelId,
   } = params;
 
   if (!conversationId) {
@@ -254,22 +264,28 @@ export async function sendMessageToConversation(
   const hasValidPhone = resolvedTarget.isPhone;
   const sanitizedPhone = hasValidPhone ? sendTarget : '';
 
-  // WhatsApp config, account-scoped.
-  const { data: config, error: configError } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', accountId)
-    .single();
-
-  if (configError || !config) {
-    throw new SendMessageError(
-      'whatsapp_not_configured',
-      'WhatsApp not configured. Please set up your WhatsApp integration first.',
-      400
-    );
+  // The number this send goes through (see channels.ts), account-scoped.
+  let config: Awaited<ReturnType<typeof resolveSendChannel>>['channel'];
+  let accessToken: string;
+  try {
+    const resolved = await resolveSendChannel(db, accountId, {
+      conversationId,
+      userId: senderUserId,
+      role: senderRole,
+      channelId,
+    });
+    config = resolved.channel;
+    accessToken = resolved.accessToken;
+  } catch (err) {
+    if (err instanceof ChannelError) {
+      throw new SendMessageError(
+        err.code,
+        err.message,
+        err.code === 'channel_forbidden' ? 403 : 400
+      );
+    }
+    throw err;
   }
-
-  const accessToken = decrypt(config.access_token);
 
   // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.
   if (isLegacyFormat(config.access_token)) {
@@ -487,6 +503,8 @@ export async function sendMessageToConversation(
       message_id: waMessageId,
       status: 'sent',
       reply_to_message_id: replyToMessageId || null,
+      channel_id: config.id,
+      sender_id: senderUserId || null,
     })
     .select()
     .single();

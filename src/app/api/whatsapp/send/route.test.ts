@@ -110,8 +110,14 @@ function makeSupabaseMock() {
     })
     b.single = vi.fn(terminal)
     b.maybeSingle = vi.fn(terminal)
-    b.then = (resolve: (v: unknown) => unknown) =>
-      resolve(didInsert ? insertResult() : selectResult())
+    b.then = (resolve: (v: unknown) => unknown) => {
+      const result = didInsert ? insertResult() : selectResult()
+      // The account's numbers are read as a list (channels.ts).
+      if (table === 'whatsapp_config' && !didInsert) {
+        return resolve({ ...result, data: result.data ? [result.data] : [] })
+      }
+      return resolve(result)
+    }
     return b
   }
 

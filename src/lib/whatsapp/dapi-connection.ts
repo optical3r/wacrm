@@ -4,34 +4,47 @@ import { DAPI_ACCESS_TOKEN, dapiClient, dapiPhoneNumberId, hasDapiApiKey } from 
 
 /**
  * Bookkeeping shared by the D-API connect route and its webhook: keep
- * dapi_sessions and the account's whatsapp_config in step with the
- * session's state. Service-role client only.
+ * dapi_sessions and whatsapp_config in step with each session's state.
+ * Every member of a Starter account has their own session and their own
+ * whatsapp_config row (migration 051). Service-role client only.
  */
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Admin = SupabaseClient<any>
 
-/** Save a connected session as the account's WhatsApp connection. Returns an error message, or null. */
+export const NUMBER_LIMIT_MESSAGE = 'Esta conta já usa todos os números do plano. Fale com o suporte para aumentar o limite.'
+
+/** Postgres error raised by enforce_whatsapp_number_limit (migration 051). */
+export function isNumberLimitError(error: { message?: string; hint?: string } | null | undefined): boolean {
+  return Boolean(error && (error.hint === 'whatsapp_number_limit' || /number limit reached/.test(error.message ?? '')))
+}
+
+/**
+ * Save a connected session as its owner's number. Returns an error
+ * message, or null.
+ */
 export async function saveDapiConnection(
   admin: Admin,
-  args: { accountId: string; userId: string | null; sessionId: string; phone: string | null },
+  args: { accountId: string; ownerUserId: string | null; sessionId: string; phone: string | null },
 ): Promise<string | null> {
-  const { accountId, userId, sessionId, phone } = args
+  const { accountId, ownerUserId, sessionId, phone } = args
   const now = new Date().toISOString()
   const phoneNumberId = dapiPhoneNumberId(sessionId)
 
   await admin
     .from('dapi_sessions')
     .update({ status: 'connected', ...(phone ? { phone } : {}), updated_at: now })
-    .eq('account_id', accountId)
+    .eq('session_id', sessionId)
+
+  if (!ownerUserId) return null
 
   const { data: existing } = await admin
     .from('whatsapp_config')
     .select('id, phone_number_id, status')
     .eq('account_id', accountId)
+    .eq('owner_user_id', ownerUserId)
     .maybeSingle()
   if (existing?.phone_number_id === phoneNumberId && existing.status === 'connected') return null
-  if (!existing && !userId) return null
 
   const fields = {
     phone_number_id: phoneNumberId,
@@ -44,46 +57,80 @@ export async function saveDapiConnection(
     last_registration_error: null,
     updated_at: now,
   }
-  const { error } = existing
-    ? await admin.from('whatsapp_config').update(fields).eq('id', existing.id)
-    : await admin.from('whatsapp_config').insert({ ...fields, account_id: accountId, user_id: userId })
+
+  if (existing) {
+    const { error } = await admin.from('whatsapp_config').update(fields).eq('id', existing.id)
+    if (error) {
+      console.error('[dapi] failed to update whatsapp_config:', error.message)
+      return 'Não foi possível salvar a conexão.'
+    }
+    return null
+  }
+
+  const { data: hasDefault } = await admin
+    .from('whatsapp_config')
+    .select('id')
+    .eq('account_id', accountId)
+    .eq('is_default', true)
+    .limit(1)
+    .maybeSingle()
+  const { error } = await admin.from('whatsapp_config').insert({
+    ...fields,
+    account_id: accountId,
+    user_id: ownerUserId,
+    owner_user_id: ownerUserId,
+    is_default: !hasDefault,
+  })
   if (error) {
+    if (isNumberLimitError(error)) return NUMBER_LIMIT_MESSAGE
     console.error('[dapi] failed to save whatsapp_config:', error.message)
     return 'Não foi possível salvar a conexão.'
   }
   return null
 }
 
-/** Mark the session and the account's D-API connection as disconnected. History is kept. */
-export async function markDapiDisconnected(admin: Admin, accountId: string): Promise<void> {
+/** Mark one session and its number as disconnected. History is kept. */
+export async function markDapiDisconnected(admin: Admin, sessionId: string): Promise<void> {
   const now = new Date().toISOString()
-  await admin.from('dapi_sessions').update({ status: 'disconnected', updated_at: now }).eq('account_id', accountId)
+  await admin.from('dapi_sessions').update({ status: 'disconnected', updated_at: now }).eq('session_id', sessionId)
   await admin
     .from('whatsapp_config')
     .update({ status: 'disconnected', updated_at: now })
-    .eq('account_id', accountId)
-    .like('phone_number_id', 'dapi:%')
+    .eq('phone_number_id', dapiPhoneNumberId(sessionId))
 }
 
 /**
- * Log the account's D-API session out, if it has one. Best effort: used
- * by /admin when a plan change or a manual disconnect must drop the
- * number, and never fails the caller.
+ * Log D-API sessions out: all of the account's, or only one member's.
+ * Best effort: used by /admin (plan change, manual disconnect) and when a
+ * member leaves the account, and never fails the caller.
  */
-export async function logoutDapiSession(admin: Admin, accountId: string): Promise<void> {
+export async function logoutDapiSession(
+  admin: Admin,
+  accountId: string,
+  opts: { ownerUserId?: string } = {},
+): Promise<void> {
   try {
-    const { data: row } = await admin
-      .from('dapi_sessions')
-      .select('session_id')
-      .eq('account_id', accountId)
-      .maybeSingle()
-    if (!row) return
-    if (hasDapiApiKey()) {
-      await dapiClient().sessions.delete(row.session_id).catch((err: unknown) => {
-        console.warn('[dapi] logout failed:', err instanceof Error ? err.message : err)
-      })
+    let query = admin.from('dapi_sessions').select('session_id').eq('account_id', accountId)
+    if (opts.ownerUserId) query = query.eq('owner_user_id', opts.ownerUserId)
+    const { data: rows } = await query
+    for (const row of (rows ?? []) as Array<{ session_id: string }>) {
+      if (hasDapiApiKey()) {
+        await dapiClient().sessions.delete(row.session_id).catch((err: unknown) => {
+          console.warn('[dapi] logout failed:', err instanceof Error ? err.message : err)
+        })
+      }
+      await markDapiDisconnected(admin, row.session_id)
     }
-    await markDapiDisconnected(admin, accountId)
+    // A member's number whose session record is gone still reads as
+    // disconnected. (/admin marks every number of the account itself.)
+    if (opts.ownerUserId) {
+      await admin
+        .from('whatsapp_config')
+        .update({ status: 'disconnected', updated_at: new Date().toISOString() })
+        .eq('account_id', accountId)
+        .eq('owner_user_id', opts.ownerUserId)
+        .like('phone_number_id', 'dapi:%')
+    }
   } catch (err) {
     console.warn('[dapi] logout skipped:', err instanceof Error ? err.message : err)
   }

@@ -6,6 +6,7 @@ import {
   useCallback,
   useEffect,
   KeyboardEvent,
+  type ReactNode,
 } from "react";
 import {
   Send,
@@ -119,6 +120,10 @@ interface MessageComposerProps {
   onOpenTemplates: () => void;
   replyTo?: ReplyDraft | null;
   onClearReply?: () => void;
+  /** Why this member cannot send here (e.g. no WhatsApp number of their own). */
+  blockedReason?: string | null;
+  /** Which number the message goes out through, shown above the input. */
+  channelBar?: ReactNode;
 }
 
 function formatDuration(seconds: number): string {
@@ -141,6 +146,8 @@ export function MessageComposer({
   onOpenTemplates,
   replyTo,
   onClearReply,
+  blockedReason = null,
+  channelBar = null,
 }: MessageComposerProps) {
   const t = useTranslations("Inbox.composer");
   const tGate = useTranslations("GatedButton");
@@ -194,7 +201,9 @@ export function MessageComposer({
   const canSend = useCan("send-messages");
   const readOnly = !canSend;
   // Media (like free-form text) is only allowed inside the 24h window.
-  const inputsDisabled = readOnly || sessionExpired;
+  // No number to send through (Starter, several numbers) blocks the same way.
+  const blocked = sessionExpired || Boolean(blockedReason);
+  const inputsDisabled = readOnly || blocked;
 
   const clearTimer = useCallback(() => {
     if (timerRef.current !== null) {
@@ -226,7 +235,7 @@ export function MessageComposer({
 
   const handleSend = useCallback(async () => {
     const trimmed = text.trim();
-    if (!trimmed || sending || sessionExpired) return;
+    if (!trimmed || sending || blocked) return;
 
     setSending(true);
     try {
@@ -238,7 +247,7 @@ export function MessageComposer({
     } finally {
       setSending(false);
     }
-  }, [text, sending, sessionExpired, onSend, replyTo?.id]);
+  }, [text, sending, blocked, onSend, replyTo?.id]);
 
   const handleKeyDown = useCallback(
     (e: KeyboardEvent<HTMLTextAreaElement>) => {
@@ -552,6 +561,12 @@ export function MessageComposer({
           />
         </div>
       )}
+      {channelBar}
+      {blockedReason && !readOnly && (
+        <div className="mb-2 rounded-lg bg-amber-500/10 px-3 py-2">
+          <p className="text-xs text-amber-400">{blockedReason}</p>
+        </div>
+      )}
       {sessionExpired && (
         <div className="mb-2 flex items-center justify-between rounded-lg bg-amber-500/10 px-3 py-2">
           <p className="text-xs text-amber-400">
@@ -743,11 +758,13 @@ export function MessageComposer({
             placeholder={
               readOnly
                 ? t("readOnlyPlaceholder")
-                : sessionExpired
-                  ? t("sessionExpiredPlaceholder")
-                  : t("typeMessagePlaceholder")
+                : blockedReason
+                  ? blockedReason
+                  : sessionExpired
+                    ? t("sessionExpiredPlaceholder")
+                    : t("typeMessagePlaceholder")
             }
-            disabled={sessionExpired || readOnly}
+            disabled={blocked || readOnly}
             rows={1}
             // Textarea keeps its own inline title — the GatedButton
             // wrapping pattern doesn't apply to non-button inputs.
@@ -755,7 +772,7 @@ export function MessageComposer({
             title={readOnly ? t("readOnlyTitle") : undefined}
             className={cn(
               "flex-1 resize-none rounded-xl border border-border bg-muted px-4 py-2.5 text-sm text-foreground placeholder-muted-foreground outline-none transition-colors focus:border-primary/50",
-              (sessionExpired || readOnly) && "cursor-not-allowed opacity-50"
+              (blocked || readOnly) && "cursor-not-allowed opacity-50"
             )}
           />
 
@@ -763,7 +780,7 @@ export function MessageComposer({
             size="sm"
             canAct={!readOnly}
             gateReason={tGate("reasons.sendMessages")}
-            disabled={!text.trim() || sessionExpired || sending}
+            disabled={!text.trim() || blocked || sending}
             onClick={handleSend}
             className="h-9 w-9 shrink-0 bg-primary p-0 hover:bg-primary/90 disabled:opacity-40"
           >

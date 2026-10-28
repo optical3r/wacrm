@@ -126,11 +126,14 @@ export async function GET() {
       )
     }
 
-    const { data: config, error: configError } = await supabase
+    // Starter accounts can have one number per member (migration 051).
+    const { data: configRows, error: configError } = await supabase
       .from('whatsapp_config')
       .select('phone_number_id, waba_id, access_token, status')
       .eq('account_id', accountId)
-      .maybeSingle()
+      .order('is_default', { ascending: false })
+      .order('created_at', { ascending: true })
+    const config = configRows?.[0] ?? null
 
     if (configError) {
       console.error('Error fetching whatsapp_config:', configError)
@@ -155,9 +158,10 @@ export async function GET() {
     // connection's own status is kept current by /api/whatsapp/dapi and
     // its webhook.
     if (isDapiPhoneNumberId(config.phone_number_id)) {
-      return config.status === 'connected'
-        ? NextResponse.json({ connected: true, provider: 'dapi' })
-        : NextResponse.json({ connected: false, reason: 'disconnected', provider: 'dapi', message: 'WhatsApp desconectado. Conecte de novo pelo QR code.' })
+      const numbers = { connected_numbers: configRows!.filter((c) => c.status === 'connected').length, total_numbers: configRows!.length }
+      return numbers.connected_numbers > 0
+        ? NextResponse.json({ connected: true, provider: 'dapi', ...numbers })
+        : NextResponse.json({ connected: false, reason: 'disconnected', provider: 'dapi', ...numbers, message: 'WhatsApp desconectado. Conecte de novo pelo QR code.' })
     }
 
     // Try to decrypt the stored token with the current ENCRYPTION_KEY.

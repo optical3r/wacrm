@@ -13,9 +13,26 @@ import { Label } from '@/components/ui/label';
 
 type SessionStatus = 'connecting' | 'connected' | 'disconnected' | 'qr_ready' | 'pair_code_ready';
 
+export interface DapiNumber {
+  id: string;
+  label: string | null;
+  status: 'connected' | 'disconnected';
+  is_default: boolean;
+  phone: string | null;
+  owner_user_id: string | null;
+  owner_name: string | null;
+  mine: boolean;
+  connected_at: string | null;
+}
+
 export interface DapiState {
   enabled: boolean;
   configured?: boolean;
+  /** Agent and up connect their own number; owner / admin manage all. */
+  can_connect?: boolean;
+  can_manage?: boolean;
+  max_numbers?: number;
+  numbers?: DapiNumber[];
   session: {
     status: SessionStatus;
     phone?: string | null;
@@ -31,17 +48,21 @@ const POLL_LIMIT_MS = 5 * 60 * 1000;
 const START_GRACE_MS = 90 * 1000;
 
 /**
- * Starter plan: connect a WhatsApp number by scanning a QR code (or
- * typing a pairing code), through D-API. The admin first accepts the
- * risk notice — unofficial connections can get a number banned.
+ * Starter plan: connect the member's own WhatsApp number by scanning a
+ * QR code (or typing a pairing code), through D-API. Each member has
+ * their own number (up to the account's limit). The risk notice comes
+ * first — unofficial connections can get a number banned.
  */
 export function DapiConnect({
   initial,
   canEdit,
+  limitReached = false,
   onConnected,
 }: {
   initial: DapiState;
   canEdit: boolean;
+  /** The account has no free number slot for this member. */
+  limitReached?: boolean;
   /** Gets the latest state, so a remount (the parent reloads) starts from it. */
   onConnected: (state: DapiState) => void;
 }) {
@@ -259,7 +280,15 @@ export function DapiConnect({
           </div>
         )}
 
-        {!connected && !pairing && canEdit && (
+        {!connected && !pairing && canEdit && limitReached && (
+          <Alert>
+            <AlertTriangle className="size-4" />
+            <AlertTitle>{t('limitTitle')}</AlertTitle>
+            <AlertDescription>{t('limitDesc', { max: state.max_numbers ?? 5 })}</AlertDescription>
+          </Alert>
+        )}
+
+        {!connected && !pairing && canEdit && !limitReached && (
           <div className="space-y-4">
             <Alert>
               <AlertTriangle className="size-4" />

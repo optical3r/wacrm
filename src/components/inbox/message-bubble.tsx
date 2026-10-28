@@ -27,6 +27,8 @@ import { useTranslations } from "next-intl";
 
 interface MessageBubbleProps {
   message: Message;
+  /** "via Ana" — the number the message went through, when there are several. */
+  channelLabel?: string | null;
   /** Pre-computed quote info for messages that reply to another. */
   reply?: { authorLabel: string; preview: string } | null;
   reactions?: MessageReaction[];
@@ -259,6 +261,7 @@ function MessageContent({
 
 export function MessageBubble({
   message,
+  channelLabel = null,
   reply,
   reactions,
   currentUserId,
@@ -330,7 +333,7 @@ export function MessageBubble({
               isAgent ? "text-primary-foreground/70" : "text-muted-foreground",
             )}
           >
-            {time}
+            {channelLabel ? `${channelLabel} · ${time}` : time}
           </span>
           {isAgent && <StatusIcon status={message.status} title={failure} />}
         </div>

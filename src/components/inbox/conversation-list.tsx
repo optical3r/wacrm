@@ -2,6 +2,8 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { useAuth } from "@/hooks/use-auth";
+import { useChannels } from "@/hooks/use-channels";
 import {
   CONVERSATION_SELECT,
   matchesContactFilters,
@@ -44,7 +46,7 @@ const STATUS_COLORS: Record<ConversationStatus, string> = {
 
 
 
-type InboxFilter = ConversationStatus | "all" | "unread";
+type InboxFilter = ConversationStatus | "all" | "unread" | "mine";
 
 export function ConversationList({
   activeConversationId,
@@ -54,17 +56,25 @@ export function ConversationList({
   resyncToken = 0,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
+  const tChannel = useTranslations("Inbox.channel");
   
   const FILTER_OPTIONS: { label: string; value: InboxFilter }[] = useMemo(() => [
     { label: t("filterAll"), value: "all" },
     { label: t("filterUnread"), value: "unread" },
+    { label: tChannel("mine"), value: "mine" },
     { label: t("filterOpen"), value: "open" },
     { label: t("filterPending"), value: "pending" },
     { label: t("filterClosed"), value: "closed" },
-  ], [t]);
+  ], [t, tChannel]);
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
+  // Starter accounts with several numbers: owner / admin can narrow the
+  // list to one number (agents only see their own chats anyway).
+  const { user, account, canManageMembers } = useAuth();
+  const { channels } = useChannels(tChannel("unnamed"));
+  const showNumberFilter = account?.plan === "starter" && canManageMembers && channels.length > 1;
+  const [channelFilter, setChannelFilter] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   // Contact-based filters (issue #272). Tags use OR logic (a conversation
   // matches if its contact carries any selected tag), consistent with
@@ -163,6 +173,8 @@ export function ConversationList({
 
     if (filter === "unread") {
       result = result.filter((c) => c.unread_count > 0);
+    } else if (filter === "mine") {
+      result = result.filter((c) => c.assigned_agent_id === user?.id);
     } else if (filter !== "all") {
       result = result.filter((c) => c.status === filter);
     }
@@ -187,8 +199,12 @@ export function ConversationList({
       });
     }
 
+    if (channelFilter) {
+      result = result.filter((c) => c.channel_ids?.includes(channelFilter));
+    }
+
     return result;
-  }, [conversations, filter, search, selectedTagIds, selectedCompany]);
+  }, [conversations, filter, search, selectedTagIds, selectedCompany, channelFilter, user?.id]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
@@ -262,6 +278,39 @@ export function ConversationList({
               ))}
             </DropdownMenuContent>
           </DropdownMenu>
+
+          {showNumberFilter && (
+            <DropdownMenu>
+              <DropdownMenuTrigger
+                className={cn(
+                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
+                  channelFilter ? "text-primary" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {channelFilter
+                  ? channels.find((c) => c.id === channelFilter)?.name ?? tChannel("byNumber")
+                  : tChannel("byNumber")}
+                <ChevronDown className="h-3 w-3" />
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="start" className="max-h-64 w-56 border-border bg-popover">
+                <DropdownMenuItem
+                  onClick={() => setChannelFilter(null)}
+                  className={cn("text-sm", !channelFilter ? "text-primary" : "text-popover-foreground")}
+                >
+                  {tChannel("allNumbers")}
+                </DropdownMenuItem>
+                {channels.map((c) => (
+                  <DropdownMenuItem
+                    key={c.id}
+                    onClick={() => setChannelFilter(c.id)}
+                    className={cn("text-sm", channelFilter === c.id ? "text-primary" : "text-popover-foreground")}
+                  >
+                    {c.name}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
 
           {tags.length > 0 && (
             <DropdownMenu>

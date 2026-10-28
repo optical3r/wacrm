@@ -4,7 +4,7 @@ import {
   engineSendInteractiveButtons,
   engineSendInteractiveList,
 } from '@/lib/flows/meta-send'
-import { decrypt } from '@/lib/whatsapp/encryption'
+import { ChannelError, resolveSendChannel } from '@/lib/whatsapp/channels'
 import {
   phoneVariants,
   isRecipientNotAllowedError,
@@ -147,16 +147,21 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   }
   const sanitized = sendTarget.target
 
-  const { data: config, error: configErr } = await db
-    .from('whatsapp_config')
-    .select('*')
-    .eq('account_id', input.accountId)
-    .single()
-  if (configErr || !config) {
-    throw new Error(t('send.notConfigured'))
+  // The number that answers this conversation (several per Starter
+  // account, see channels.ts).
+  let resolved: Awaited<ReturnType<typeof resolveSendChannel>>
+  try {
+    resolved = await resolveSendChannel(db, input.accountId, {
+      conversationId: input.conversationId,
+    })
+  } catch (err) {
+    if (err instanceof ChannelError && err.code === 'whatsapp_not_configured') {
+      throw new Error(t('send.notConfigured'))
+    }
+    throw err
   }
-
-  const accessToken = decrypt(config.access_token)
+  const config = resolved.channel
+  const accessToken = resolved.accessToken
 
   // Local template row — read for the body we persist below, not for
   // the Meta payload (the wire shape is deliberately unchanged here).
@@ -234,6 +239,7 @@ async function sendViaMeta(input: SendInput): Promise<{ whatsapp_message_id: str
   const template_name = input.kind === 'template' ? input.templateName : null
 
   const { error: msgErr } = await db.from('messages').insert({
+    channel_id: config.id,
     conversation_id: input.conversationId,
     sender_type: 'bot',
     content_type,

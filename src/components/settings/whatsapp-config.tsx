@@ -26,6 +26,7 @@ import { Switch } from '@/components/ui/switch';
 import { SettingsPanelHead } from './settings-panel-head';
 import { CoexyConnect, type CoexyState } from './coexy-connect';
 import { DapiConnect, type DapiState } from './dapi-connect';
+import { DapiNumbers } from './dapi-numbers';
 import {
   Accordion,
   AccordionItem,
@@ -545,20 +546,40 @@ export function WhatsAppConfig() {
   }
 
   if (isStarter && dapi) {
+    const reloadDapi = () =>
+      fetch('/api/whatsapp/dapi', { cache: 'no-store' })
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.enabled) setDapi(data);
+        })
+        .catch(() => undefined);
+    const numbers = dapi.numbers ?? [];
+    const hasOwn = numbers.some((n) => n.mine);
+    const limitReached = !hasOwn && numbers.length >= (dapi.max_numbers ?? 5);
     return (
       <section className="animate-in fade-in-50 duration-200">
         <SettingsPanelHead title={t("title")} description={t("description")} />
-        <div className="max-w-2xl">
+        <div className="max-w-2xl space-y-4">
           <DapiConnect
             initial={dapi}
-            canEdit={canEditSettings}
+            canEdit={dapi.can_connect ?? canEditSettings}
+            limitReached={limitReached}
             onConnected={(latest) => {
               // The reload below may remount this card: start it from the
               // latest state, not the QR it was first given.
-              setDapi(latest);
+              setDapi((prev) => ({ ...(prev ?? latest), ...latest }));
+              void reloadDapi();
               if (accountId) fetchConfig(accountId);
             }}
           />
+          {(numbers.length > 0 || dapi.can_manage) && (
+            <DapiNumbers
+              numbers={numbers}
+              maxNumbers={dapi.max_numbers ?? 5}
+              canManage={dapi.can_manage ?? false}
+              onChanged={() => void reloadDapi()}
+            />
+          )}
         </div>
       </section>
     );

@@ -15,6 +15,8 @@
 // ============================================================
 
 import { NextResponse } from "next/server";
+import { supabaseAdmin } from "@/lib/flows/admin-client";
+import { logoutDapiSession } from "@/lib/whatsapp/dapi-connection";
 import type { PostgrestError } from "@supabase/supabase-js";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
@@ -117,6 +119,19 @@ export async function DELETE(
     });
 
     if (error) return rpcErrorToResponse(error);
+
+    // Starter: their own WhatsApp number leaves with them. The history
+    // stays; their chats go back to "unassigned" (migration 051).
+    const admin = supabaseAdmin();
+    await logoutDapiSession(admin, ctx.accountId, { ownerUserId: userId });
+    const { error: unassignErr } = await admin
+      .from("conversations")
+      .update({ assigned_agent_id: null })
+      .eq("account_id", ctx.accountId)
+      .eq("assigned_agent_id", userId);
+    if (unassignErr) {
+      console.error("[members] unassigning chats failed:", unassignErr.message);
+    }
 
     return NextResponse.json({ ok: true, newPersonalAccountId: data });
   } catch (err) {

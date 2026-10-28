@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { requireRole, toErrorResponse } from '@/lib/auth/account';
 import { sendReactionMessage } from '@/lib/whatsapp/meta-api';
-import { decrypt } from '@/lib/whatsapp/encryption';
+import { ChannelError, resolveSendChannel } from '@/lib/whatsapp/channels';
 import { resolveContactSendTarget } from '@/lib/whatsapp/wa-identity';
 import {
   checkRateLimit,
@@ -27,7 +27,7 @@ export async function POST(request: Request) {
     // reaction to Meta before mirroring it locally — so, as on /send, a
     // missing role check let a read-only viewer put a visible reaction on
     // the customer's message even though RLS blocked the local mirror.
-    const { supabase, accountId, userId } = await requireRole('agent');
+    const { supabase, accountId, userId, role } = await requireRole('agent');
 
     const limit = checkRateLimit(`react:${userId}`, RATE_LIMITS.react);
     if (!limit.success) {
@@ -50,7 +50,7 @@ export async function POST(request: Request) {
     // Resolve target message + its conversation; verify ownership.
     const { data: targetMessage, error: msgError } = await supabase
       .from('messages')
-      .select('id, message_id, conversation_id')
+      .select('id, message_id, conversation_id, channel_id')
       .eq('id', message_id)
       .maybeSingle();
 
@@ -94,21 +94,34 @@ export async function POST(request: Request) {
       );
     }
 
-    // WhatsApp config + access token. Account-scoped post-multi-user.
-    const { data: config, error: configError } = await supabase
-      .from('whatsapp_config')
-      .select('phone_number_id, access_token')
-      .eq('account_id', accountId)
-      .single();
-
-    if (configError || !config) {
-      return NextResponse.json(
-        { error: t('common.whatsappNotConfiguredDot') },
-        { status: 400 },
-      );
+    // A reaction has to go through the number the message went through
+    // (several per Starter account, see channels.ts). An agent may only
+    // use their own number.
+    let config: { phone_number_id: string };
+    let accessToken: string;
+    try {
+      const resolved = await resolveSendChannel(supabase, accountId, {
+        conversationId: targetMessage.conversation_id,
+        userId,
+        role,
+        channelId: targetMessage.channel_id ?? null,
+      });
+      config = resolved.channel;
+      accessToken = resolved.accessToken;
+    } catch (err) {
+      if (err instanceof ChannelError) {
+        return NextResponse.json(
+          {
+            error:
+              err.code === 'whatsapp_not_configured'
+                ? t('common.whatsappNotConfiguredDot')
+                : err.message,
+          },
+          { status: err.code === 'channel_forbidden' ? 403 : 400 },
+        );
+      }
+      throw err;
     }
-
-    const accessToken = decrypt(config.access_token);
 
     try {
       await sendReactionMessage({

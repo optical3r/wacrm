@@ -174,6 +174,10 @@ export interface Conversation {
   contact_id: string;
   status: ConversationStatus;
   assigned_agent_id?: string;
+  /** Last number the customer wrote to (migration 051, Starter). */
+  last_channel_id?: string | null;
+  /** Every number this chat went through (migration 051). */
+  channel_ids?: string[];
   last_message_text?: string;
   last_message_at?: string;
   unread_count: number;
@@ -234,6 +238,8 @@ export interface Message {
   conversation_id: string;
   sender_type: SenderType;
   sender_id?: string;
+  /** Number (whatsapp_config row) the message went through (migration 051). */
+  channel_id?: string | null;
   content_type: ContentType;
   content_text?: string;
   media_url?: string;

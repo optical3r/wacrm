@@ -29,6 +29,8 @@ interface OverviewCounts {
 interface WhatsAppStatus {
   configured: boolean;
   connected: boolean;
+  /** Starter: numbers connected out of the account's numbers. */
+  numbers?: { connected: number; total: number } | null;
 }
 
 export function SettingsOverview({
@@ -125,6 +127,7 @@ export function SettingsOverview({
           .from('whatsapp_config')
           .select('phone_number_id')
           .eq('account_id', acctId)
+          .limit(1)
           .maybeSingle(),
         fetch('/api/whatsapp/config', { cache: 'no-store' }).then((r) => r.json()),
       ]);
@@ -132,6 +135,10 @@ export function SettingsOverview({
       setWhatsapp({
         configured: row.status === 'fulfilled' && !!row.value.data?.phone_number_id,
         connected: health.status === 'fulfilled' && !!health.value?.connected,
+        numbers:
+          health.status === 'fulfilled' && typeof health.value?.total_numbers === 'number'
+            ? { connected: health.value.connected_numbers ?? 0, total: health.value.total_numbers }
+            : null,
       });
       setWhatsappLoading(false);
     })();
@@ -165,7 +172,10 @@ export function SettingsOverview({
         t('notSetup')
       ) : whatsapp.connected ? (
         <>
-          <StatusDot tone="ok" /> {t('connected')}
+          <StatusDot tone="ok" />{' '}
+          {whatsapp.numbers && whatsapp.numbers.total > 1
+            ? t('numbersConnected', whatsapp.numbers)
+            : t('connected')}
         </>
       ) : (
         <>
