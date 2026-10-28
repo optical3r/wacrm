@@ -2108,7 +2108,16 @@
       "makeDefault": "Tornar padrão",
       "remove": "Remover",
       "removeConfirm": "Remover este número da conta? A vaga fica livre. As conversas continuam, mas as mensagens perdem a etiqueta do número.",
-      "saveFailed": "Não foi possível salvar."
+      "saveFailed": "Não foi possível salvar.",
+      "titleManage": "Conectar WhatsApp",
+      "linkTo": "Vincular ao atendente",
+      "linkToHint": "O número fica com esse atendente: ele responde por esse número e vê os chats dele. Dono e admin podem conectar no lugar do atendente.",
+      "memberYou": "{name} (você)",
+      "hasNumber": "já tem número",
+      "changeOwner": "Trocar atendente",
+      "changeOwnerLabel": "Atendente do número",
+      "ownerChanged": "Atendente do número atualizado.",
+      "cancel": "Cancelar"
     }
   },
   "SignupPage": {

@@ -2108,7 +2108,16 @@
       "makeDefault": "Hacer predeterminado",
       "remove": "Eliminar",
       "removeConfirm": "¿Eliminar este número de la cuenta? El espacio queda libre. Los chats siguen, pero los mensajes pierden la etiqueta del número.",
-      "saveFailed": "No se pudo guardar."
+      "saveFailed": "No se pudo guardar.",
+      "titleManage": "Conectar WhatsApp",
+      "linkTo": "Vincular al agente",
+      "linkToHint": "El número queda con este agente: responde por él y ve sus chats. El dueño y el admin pueden conectarlo en su lugar.",
+      "memberYou": "{name} (tú)",
+      "hasNumber": "ya tiene número",
+      "changeOwner": "Cambiar agente",
+      "changeOwnerLabel": "Agente del número",
+      "ownerChanged": "Agente del número actualizado.",
+      "cancel": "Cancelar"
     }
   },
   "SignupPage": {

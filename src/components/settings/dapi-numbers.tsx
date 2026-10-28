@@ -3,11 +3,11 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
-import { Loader2, Pencil, Star, Trash2, Unplug } from 'lucide-react';
+import { Loader2, Pencil, Star, Trash2, Unplug, UserCog } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import type { DapiNumber } from './dapi-connect';
+import type { DapiMember, DapiNumber } from './dapi-connect';
 
 /**
  * Starter plan: the account's WhatsApp numbers, one per member. Owner
@@ -17,15 +17,19 @@ export function DapiNumbers({
   numbers,
   maxNumbers,
   canManage,
+  members = [],
   onChanged,
 }: {
   numbers: DapiNumber[];
   maxNumbers: number;
   canManage: boolean;
+  /** Owner / admin: members a number can be linked to. */
+  members?: DapiMember[];
   onChanged: () => void;
 }) {
   const t = useTranslations('Settings.dapi');
   const [busy, setBusy] = useState<string | null>(null);
+  const [relinking, setRelinking] = useState<string | null>(null);
 
   async function request(id: string, init: RequestInit, url = '/api/whatsapp/dapi') {
     setBusy(id);
@@ -54,6 +58,17 @@ export function DapiNumbers({
     const answer = window.prompt(t('renamePrompt'), n.label ?? '');
     if (answer === null) return;
     await patch(n, { label: answer });
+  }
+
+  async function relink(n: DapiNumber, ownerUserId: string) {
+    if (!ownerUserId || ownerUserId === n.owner_user_id) {
+      setRelinking(null);
+      return;
+    }
+    if (await patch(n, { owner_user_id: ownerUserId })) {
+      setRelinking(null);
+      toast.success(t('ownerChanged'));
+    }
   }
 
   async function disconnect(n: DapiNumber) {
@@ -100,6 +115,30 @@ export function DapiNumbers({
                   {n.phone ? <span className="font-mono">+{n.phone}</span> : t('noPhone')}
                   {n.label && n.owner_name ? ` · ${t('ownerLine', { name: n.owner_name })}` : ''}
                 </p>
+                {relinking === n.id && (
+                  <div className="mt-2 flex flex-wrap items-center gap-2">
+                    <select
+                      aria-label={t('changeOwnerLabel')}
+                      defaultValue={n.owner_user_id ?? ''}
+                      disabled={working}
+                      onChange={(e) => void relink(n, e.target.value)}
+                      className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
+                    >
+                      {!n.owner_user_id && <option value="">{t('unknownOwner')}</option>}
+                      {members.map((m) => {
+                        const taken = m.user_id !== n.owner_user_id && numbers.some((x) => x.owner_user_id === m.user_id);
+                        return (
+                          <option key={m.user_id} value={m.user_id} disabled={taken}>
+                            {taken ? `${m.name} · ${t('hasNumber')}` : m.name}
+                          </option>
+                        );
+                      })}
+                    </select>
+                    <Button size="sm" variant="ghost" onClick={() => setRelinking(null)}>
+                      {t('cancel')}
+                    </Button>
+                  </div>
+                )}
               </div>
               {canEditThis && (
                 <div className="flex flex-wrap gap-1.5">
@@ -108,6 +147,12 @@ export function DapiNumbers({
                     <Pencil className="mr-1.5 size-3.5" />
                     {t('rename')}
                   </Button>
+                  {canManage && members.length > 0 && (
+                    <Button size="sm" variant="ghost" disabled={working} onClick={() => setRelinking(n.id)}>
+                      <UserCog className="mr-1.5 size-3.5" />
+                      {t('changeOwner')}
+                    </Button>
+                  )}
                   {canManage && !n.is_default && (
                     <Button size="sm" variant="ghost" disabled={working} onClick={() => patch(n, { is_default: true })}>
                       <Star className="mr-1.5 size-3.5" />

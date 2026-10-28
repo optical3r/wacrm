@@ -577,6 +577,7 @@ export function WhatsAppConfig() {
               numbers={numbers}
               maxNumbers={dapi.max_numbers ?? 5}
               canManage={dapi.can_manage ?? false}
+              members={dapi.members}
               onChanged={() => void reloadDapi()}
             />
           )}

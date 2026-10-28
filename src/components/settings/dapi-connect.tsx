@@ -25,6 +25,12 @@ export interface DapiNumber {
   connected_at: string | null;
 }
 
+export interface DapiMember {
+  user_id: string;
+  name: string;
+  role: string;
+}
+
 export interface DapiState {
   enabled: boolean;
   configured?: boolean;
@@ -33,6 +39,10 @@ export interface DapiState {
   can_manage?: boolean;
   max_numbers?: number;
   numbers?: DapiNumber[];
+  /** Owner / admin: who can own a number (agent and up). */
+  members?: DapiMember[];
+  /** Whose session `session` describes. */
+  target_user_id?: string;
   session: {
     status: SessionStatus;
     phone?: string | null;
@@ -50,8 +60,10 @@ const START_GRACE_MS = 90 * 1000;
 /**
  * Starter plan: connect the member's own WhatsApp number by scanning a
  * QR code (or typing a pairing code), through D-API. Each member has
- * their own number (up to the account's limit). The risk notice comes
- * first — unofficial connections can get a number banned.
+ * their own number (up to the account's limit). Owner / admin can also
+ * connect a number on behalf of a member, picking who it is linked to.
+ * The risk notice comes first — unofficial connections can get a number
+ * banned.
  */
 export function DapiConnect({
   initial,
@@ -76,6 +88,19 @@ export function DapiConnect({
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollStarted = useRef(0);
   const polling = useRef(false);
+  // Whose number this card connects: the caller, or the member an owner /
+  // admin picked. A ref too, so the poll loop always asks about the
+  // current pick.
+  const [target, setTarget] = useState<string | null>(initial.target_user_id ?? null);
+  const targetRef = useRef<string | null>(target);
+  const members = state.can_manage ? state.members ?? [] : [];
+  const self = initial.target_user_id ?? null;
+  const forQuery = (id: string | null) => (id && id !== self ? `?for=${encodeURIComponent(id)}` : '');
+  const numbers = state.numbers ?? [];
+  const targetHasNumber = numbers.some((n) => n.owner_user_id === target);
+  const noSlot = state.can_manage
+    ? !targetHasNumber && numbers.length >= (state.max_numbers ?? 5)
+    : limitReached;
 
   const status = state.session?.status ?? null;
   const connected = status === 'connected' && !state.sync_error;
@@ -87,7 +112,7 @@ export function DapiConnect({
 
   const refresh = useCallback(async (): Promise<DapiState | null> => {
     try {
-      const res = await fetch('/api/whatsapp/dapi', { cache: 'no-store' });
+      const res = await fetch(`/api/whatsapp/dapi${forQuery(targetRef.current)}`, { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setState(data);
@@ -96,6 +121,7 @@ export function DapiConnect({
       console.error('[dapi] status check failed:', err);
       return null;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const stopPolling = useCallback(() => {
@@ -157,7 +183,12 @@ export function DapiConnect({
       const res = await fetch('/api/whatsapp/dapi', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode, phone: mode === 'pair' ? phone : undefined, accept_risk: accepted }),
+        body: JSON.stringify({
+          mode,
+          phone: mode === 'pair' ? phone : undefined,
+          accept_risk: accepted,
+          for_user_id: target && target !== self ? target : undefined,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
@@ -178,7 +209,7 @@ export function DapiConnect({
     if (!window.confirm(t('disconnectConfirm'))) return;
     setBusy(true);
     try {
-      const res = await fetch('/api/whatsapp/dapi', { method: 'DELETE' });
+      const res = await fetch(`/api/whatsapp/dapi${forQuery(target)}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       stopPolling();
@@ -193,16 +224,53 @@ export function DapiConnect({
     }
   }
 
+  async function pickTarget(id: string) {
+    stopPolling();
+    setTarget(id);
+    targetRef.current = id;
+    setAccepted(false);
+    setState((prev) => ({ ...prev, session: null, sync_error: null }));
+    setBusy(true);
+    const data = await refresh();
+    setBusy(false);
+    const s = data?.session?.status;
+    if (s === 'connecting' || s === 'qr_ready' || s === 'pair_code_ready') startPolling();
+  }
+
   return (
     <Card>
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-foreground">
           <QrCode className="size-5 text-primary" />
-          {t('title')}
+          {members.length > 0 ? t('titleManage') : t('title')}
         </CardTitle>
         <CardDescription className="text-muted-foreground">{t('description')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
+        {members.length > 0 && canEdit && (
+          <div className="space-y-1.5">
+            <Label htmlFor="dapi-owner">{t('linkTo')}</Label>
+            <select
+              id="dapi-owner"
+              value={target ?? ''}
+              disabled={busy}
+              onChange={(e) => void pickTarget(e.target.value)}
+              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
+            >
+              {members.map((m) => {
+                const has = numbers.some((n) => n.owner_user_id === m.user_id);
+                const name = m.user_id === self ? t('memberYou', { name: m.name }) : m.name;
+                return (
+                  <option key={m.user_id} value={m.user_id}>
+                    {has ? `${name} · ${t('hasNumber')}` : name}
+                  </option>
+                );
+              })}
+            </select>
+            <p className="text-xs text-muted-foreground">{t('linkToHint')}</p>
+          </div>
+        )}
+
         {state.configured === false && (
           <Alert>
             <AlertTriangle className="size-4" />
@@ -280,7 +348,7 @@ export function DapiConnect({
           </div>
         )}
 
-        {!connected && !pairing && canEdit && limitReached && (
+        {!connected && !pairing && canEdit && noSlot && (
           <Alert>
             <AlertTriangle className="size-4" />
             <AlertTitle>{t('limitTitle')}</AlertTitle>
@@ -288,7 +356,7 @@ export function DapiConnect({
           </Alert>
         )}
 
-        {!connected && !pairing && canEdit && !limitReached && (
+        {!connected && !pairing && canEdit && !noSlot && (
           <div className="space-y-4">
             <Alert>
               <AlertTriangle className="size-4" />

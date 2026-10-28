@@ -2108,7 +2108,16 @@
       "makeDefault": "Make default",
       "remove": "Remove",
       "removeConfirm": "Remove this number from the account? The slot is freed. Chats stay, but messages lose their number tag.",
-      "saveFailed": "Could not save."
+      "saveFailed": "Could not save.",
+      "titleManage": "Connect WhatsApp",
+      "linkTo": "Link to team member",
+      "linkToHint": "The number belongs to this member: they reply through it and see its chats. Owners and admins can connect it on their behalf.",
+      "memberYou": "{name} (you)",
+      "hasNumber": "already has a number",
+      "changeOwner": "Change member",
+      "changeOwnerLabel": "Number's team member",
+      "ownerChanged": "Number's team member updated.",
+      "cancel": "Cancel"
     }
   },
   "SignupPage": {
