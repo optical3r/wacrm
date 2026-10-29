@@ -15,6 +15,7 @@ import {
   DollarSign,
   StickyNote,
   Plus,
+  Users,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -29,6 +30,7 @@ interface ContactSidebarProps {
 export function ContactSidebar({ contact }: ContactSidebarProps) {
   const tSidebar = useTranslations("Inbox.sidebar");
   const tThread = useTranslations("Inbox.messageThread");
+  const tList = useTranslations("Inbox.conversationList");
 
   const { accountId } = useAuth();
   const [copied, setCopied] = useState(false);
@@ -131,7 +133,10 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
     );
   }
 
-  const displayName = contact.name || contactHandle(contact);
+  // A group's handle is its raw WhatsApp id: never shown.
+  const displayName = contact.is_group
+    ? contact.name || tList("unnamedGroup")
+    : contact.name || contactHandle(contact);
   const initials = displayName.charAt(0).toUpperCase();
 
   return (
@@ -147,6 +152,8 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
                   alt={displayName}
                   className="h-16 w-16 rounded-full object-cover"
                 />
+              ) : contact.is_group ? (
+                <Users className="h-7 w-7 text-muted-foreground" />
               ) : (
                 initials
               )}

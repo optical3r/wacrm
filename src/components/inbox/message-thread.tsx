@@ -30,6 +30,7 @@ import {
   PanelRightOpen,
   PanelRightClose,
   EyeOff,
+  Users,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -1059,7 +1060,7 @@ export function MessageThread({
             </button>
           )}
           <div className="flex h-9 w-9 flex-shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
-            {displayName.charAt(0).toUpperCase()}
+            {isGroup ? <Users className="h-4 w-4 text-muted-foreground" /> : displayName.charAt(0).toUpperCase()}
           </div>
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>

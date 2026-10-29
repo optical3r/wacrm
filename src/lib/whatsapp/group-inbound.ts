@@ -50,22 +50,65 @@ async function groupChannel(admin: Admin, phoneNumberId: string): Promise<GroupC
   return channel
 }
 
-/** Group name from D-API when the message did not carry one. Best effort. */
-async function fetchGroupName(phoneNumberId: string, groupJid: string): Promise<string | null> {
+/** First non-empty `subject` / `name` in a D-API answer, however it is wrapped. */
+function findGroupName(v: unknown, depth = 0): string | null {
+  if (depth > 4 || typeof v !== 'object' || v === null) return null
+  if (Array.isArray(v)) {
+    for (const x of v) {
+      const found = findGroupName(x, depth + 1)
+      if (found) return found
+    }
+    return null
+  }
+  const o = v as Record<string, unknown>
+  for (const key of ['subject', 'groupName', 'group_name', 'name']) {
+    const x = o[key]
+    if (typeof x === 'string' && x.trim()) return x.trim()
+  }
+  for (const x of Object.values(o)) {
+    const found = findGroupName(x, depth + 1)
+    if (found) return found
+  }
+  return null
+}
+
+/**
+ * Group name from D-API: messages carry group_name, but D-API sends it
+ * empty. Best effort; the answer's shape is logged once per lookup so
+ * it can be checked in dapi_webhook_log.
+ */
+async function fetchGroupName(admin: Admin, phoneNumberId: string, groupJid: string): Promise<string | null> {
   if (!hasDapiApiKey()) return null
+  const sessionId = sessionIdFrom(phoneNumberId)
+  const client = dapiClient()
   try {
-    const info = (await dapiClient().groups.getInfo(groupJid, { sessionId: sessionIdFrom(phoneNumberId) })) as unknown as Record<
-      string,
-      unknown
-    >
-    const inner = (info?.data ?? info) as Record<string, unknown>
-    const name = inner?.subject ?? inner?.name
-    return typeof name === 'string' && name ? name : null
+    const info = await client.groups.getInfo(groupJid, { sessionId })
+    const name = findGroupName(info)
+    if (name) return name
+    await admin.from('dapi_webhook_log').insert({ session_id: sessionId, event: 'debug:group_info', payload: { info } })
   } catch (err) {
     console.warn('[groups] group info failed:', err instanceof Error ? err.message : err)
+  }
+  // Fallback: the session's group list.
+  try {
+    const list = (await client.groups.list({ sessionId })) as unknown
+    const arr = Array.isArray(list)
+      ? list
+      : ((list as Record<string, unknown>)?.data ?? (list as Record<string, unknown>)?.groups ?? []) as unknown[]
+    const match = (Array.isArray(arr) ? arr : []).find((g) => {
+      const o = g as Record<string, unknown>
+      return [o.id, o.jid, o.groupId, o.JID].some((id) => typeof id === 'string' && (id === groupJid || `${id}@g.us` === groupJid))
+    })
+    const name = findGroupName(match ?? null)
+    if (!name) await admin.from('dapi_webhook_log').insert({ session_id: sessionId, event: 'debug:group_list', payload: { list } })
+    return name
+  } catch (err) {
+    console.warn('[groups] group list failed:', err instanceof Error ? err.message : err)
     return null
   }
 }
+
+const NAME_RETRY_MS = 10 * 60 * 1000
 
 interface GroupContact {
   id: string
@@ -82,22 +125,28 @@ async function findOrCreateGroupContact(
   const find = () =>
     admin
       .from('contacts')
-      .select('id, name, group_hidden_at')
+      .select('id, name, group_hidden_at, updated_at')
       .eq('account_id', channel.account_id)
       .eq('wa_group_id', m.groupJid)
       .maybeSingle()
 
   const { data: existing } = await find()
   if (existing) {
-    const row = existing as GroupContact
-    if (m.groupName && m.groupName !== row.name) {
-      await admin.from('contacts').update({ name: m.groupName, updated_at: new Date().toISOString() }).eq('id', row.id)
-      row.name = m.groupName
+    const row = existing as GroupContact & { updated_at?: string | null }
+    let name = m.groupName ?? null
+    // No name yet: ask D-API again, at most every few minutes.
+    if (!name && !row.name && Date.now() - Date.parse(row.updated_at ?? '1970-01-01') > NAME_RETRY_MS) {
+      name = await fetchGroupName(admin, phoneNumberId, m.groupJid)
+      if (!name) await admin.from('contacts').update({ updated_at: new Date().toISOString() }).eq('id', row.id)
+    }
+    if (name && name !== row.name) {
+      await admin.from('contacts').update({ name, updated_at: new Date().toISOString() }).eq('id', row.id)
+      row.name = name
     }
     return row
   }
 
-  const name = m.groupName ?? (await fetchGroupName(phoneNumberId, m.groupJid))
+  const name = m.groupName ?? (await fetchGroupName(admin, phoneNumberId, m.groupJid))
   const { data: created, error } = await admin
     .from('contacts')
     .insert({
