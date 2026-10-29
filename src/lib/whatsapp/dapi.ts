@@ -68,9 +68,34 @@ function contextFor(contextMessageId?: string) {
   return contextMessageId ? { contextInfo: { stanzaId: contextMessageId } } : {}
 }
 
+/**
+ * D-API answers a refused request with a body like {error: true, message}
+ * and the SDK turns `error` into the Error message, so the thrown text is
+ * just "true". Rethrow with what D-API actually said.
+ */
+async function explained<T>(call: Promise<T>): Promise<T> {
+  try {
+    return await call
+  } catch (err) {
+    const e = err as { message?: string; status?: number; response?: unknown }
+    const body = e.response
+    let detail: string | undefined
+    if (typeof body === 'string') detail = body
+    else if (body && typeof body === 'object') {
+      const b = body as Record<string, unknown>
+      const pick = [b.message, b.details, b.error, b.msg].find((v) => typeof v === 'string' && v.trim())
+      detail = typeof pick === 'string' ? pick : JSON.stringify(body).slice(0, 500)
+    }
+    throw new Error(`D-API${e.status ? ` ${e.status}` : ''}: ${detail ?? e.message ?? 'erro desconhecido'}`)
+  }
+}
+
 /** D-API's send response carries the WhatsApp message id under a few names. */
 function messageIdOf(res: unknown): string {
   const r = (res ?? {}) as Record<string, unknown>
+  if (r.success === false && typeof r.message === 'string') {
+    throw new Error(`D-API: ${r.message}`)
+  }
   const data = (r.data ?? {}) as Record<string, unknown>
   const key = (r.key ?? data.key ?? {}) as Record<string, unknown>
   const id = r.messageId ?? data.messageId ?? r.id ?? data.id ?? key.id
@@ -86,12 +111,14 @@ export async function dapiSendText(args: {
   text: string
   contextMessageId?: string
 }): Promise<MetaSendResult> {
-  const res = await dapiClient().messages.sendText({
-    sessionId: sessionIdFrom(args.phoneNumberId),
-    to: toNumber(args.to),
-    text: args.text,
-    ...contextFor(args.contextMessageId),
-  })
+  const res = await explained(
+    dapiClient().messages.sendText({
+      sessionId: sessionIdFrom(args.phoneNumberId),
+      to: toNumber(args.to),
+      text: args.text,
+      ...contextFor(args.contextMessageId),
+    }),
+  )
   return { messageId: messageIdOf(res) }
 }
 
@@ -113,16 +140,16 @@ export async function dapiSendMedia(args: {
   let res: unknown
   switch (args.kind) {
     case 'image':
-      res = await m.sendImage({ ...base, image: args.link, caption: args.caption })
+      res = await explained(m.sendImage({ ...base, image: args.link, caption: args.caption }))
       break
     case 'video':
-      res = await m.sendVideo({ ...base, video: args.link, caption: args.caption })
+      res = await explained(m.sendVideo({ ...base, video: args.link, caption: args.caption }))
       break
     case 'audio':
-      res = await m.sendAudio({ ...base, audio: args.link, ptt: true })
+      res = await explained(m.sendAudio({ ...base, audio: args.link, ptt: true }))
       break
     case 'document':
-      res = await m.sendDocument({ ...base, document: args.link, fileName: args.filename })
+      res = await explained(m.sendDocument({ ...base, document: args.link, fileName: args.filename }))
       break
   }
   return { messageId: messageIdOf(res) }
@@ -156,14 +183,17 @@ export async function dapiSendButtons(args: {
   footerText?: string
   buttons: Array<{ id: string; title: string }>
 }): Promise<MetaSendResult> {
-  const res = await dapiClient().interactive.sendNativeFlow({
-    sessionId: sessionIdFrom(args.phoneNumberId),
-    to: toNumber(args.to),
-    title: args.headerText ?? '',
-    body: args.bodyText,
-    footer: args.footerText,
-    buttons: args.buttons.map((b) => ({ type: 'quick_reply' as const, id: b.id, title: b.title })),
-  })
+  const res = await explained(
+    dapiClient().interactive.sendNativeFlow({
+      sessionId: sessionIdFrom(args.phoneNumberId),
+      to: toNumber(args.to),
+      // Header line; an empty string is refused, so leave it out when unset.
+      title: (args.headerText?.trim() || undefined) as string,
+      body: args.bodyText,
+      footer: args.footerText || undefined,
+      buttons: args.buttons.map((b) => ({ type: 'quick_reply' as const, id: b.id, title: b.title })),
+    }),
+  )
   return { messageId: messageIdOf(res) }
 }
 
@@ -176,18 +206,20 @@ export async function dapiSendList(args: {
   footerText?: string
   sections: Array<{ title?: string; rows: Array<{ id: string; title: string; description?: string }> }>
 }): Promise<MetaSendResult> {
-  const res = await dapiClient().interactive.sendList({
-    sessionId: sessionIdFrom(args.phoneNumberId),
-    to: toNumber(args.to),
-    title: args.headerText,
-    description: args.bodyText,
-    buttonText: args.buttonLabel,
-    footerText: args.footerText,
-    sections: args.sections.map((s) => ({
-      title: s.title,
-      rows: s.rows.map((r) => ({ rowId: r.id, title: r.title, description: r.description })),
-    })),
-  })
+  const res = await explained(
+    dapiClient().interactive.sendList({
+      sessionId: sessionIdFrom(args.phoneNumberId),
+      to: toNumber(args.to),
+      title: args.headerText?.trim() || undefined,
+      description: args.bodyText,
+      buttonText: args.buttonLabel,
+      footerText: args.footerText || undefined,
+      sections: args.sections.map((s) => ({
+        title: s.title || undefined,
+        rows: s.rows.map((r) => ({ rowId: r.id, title: r.title, description: r.description || undefined })),
+      })),
+    }),
+  )
   return { messageId: messageIdOf(res) }
 }
 
