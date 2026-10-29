@@ -28,9 +28,10 @@ import {
  *            for_user_id? } starts a fresh session for the caller (agent
  *            and up), or for owner / admin on behalf of `for_user_id`.
  *            The ban-risk notice must be accepted.
- *   PATCH  → { channel_id, label?, is_default?, owner_user_id? } renames
- *            a number (own, or any for owner / admin), makes it the
- *            default or links it to another member (owner / admin).
+ *   PATCH  → { channel_id, label?, is_default?, owner_user_id?,
+ *            read_groups? } renames a number (own, or any for owner /
+ *            admin), makes it the default, links it to another member or
+ *            switches WhatsApp group reading on / off (owner / admin).
  *   DELETE → ?channel_id= (or ?for=) logs a number out (own, or any for
  *            owner / admin); &remove=1 also deletes a disconnected number,
  *            owner / admin only. History is kept either way.
@@ -91,7 +92,7 @@ const WEBHOOK_EVENTS = ['messages.received', 'messages.sent', 'message.delivered
  * webhookUrl given at create time alone is not enough: D-API only
  * delivers events enabled in the session's webhook config.
  */
-async function enableWebhook(client: ReturnType<typeof dapiClient>, sessionId: string, url: string) {
+async function enableWebhook(client: ReturnType<typeof dapiClient>, sessionId: string, url: string, readGroups = false) {
   await call(client.sessions.updateWebhook(sessionId, { webhookUrl: url }))
   await call(
     client.sessions.updateWebhookConfig(sessionId, {
@@ -100,7 +101,18 @@ async function enableWebhook(client: ReturnType<typeof dapiClient>, sessionId: s
       events: Object.fromEntries(WEBHOOK_EVENTS.map((e) => [e, { enabled: true, webhookUrl: url }])),
     }),
   )
-  await call(client.sessions.updateIgnoreSettings(sessionId, { ignoreGroups: true, ignoreStatus: true }))
+  await call(client.sessions.updateIgnoreSettings(sessionId, { ignoreGroups: !readGroups, ignoreStatus: true }))
+}
+
+/** Whether the member's number reads groups (migration 052). */
+async function readsGroups(accountId: string, ownerUserId: string): Promise<boolean> {
+  const { data } = await supabaseAdmin()
+    .from('whatsapp_config')
+    .select('read_groups')
+    .eq('account_id', accountId)
+    .eq('owner_user_id', ownerUserId)
+    .maybeSingle()
+  return (data as { read_groups?: boolean } | null)?.read_groups === true
 }
 
 /** A new secret webhook URL for the session; only the token's hash is stored. */
@@ -194,6 +206,7 @@ interface NumberRow {
   is_default: boolean
   phone_number_id: string
   connected_at: string | null
+  read_groups: boolean
 }
 
 /** The account's numbers as the settings page shows them. */
@@ -201,7 +214,7 @@ async function listNumbers(accountId: string, userId: string, all: boolean) {
   const admin = supabaseAdmin()
   const { data: rows } = await admin
     .from('whatsapp_config')
-    .select('id, owner_user_id, label, status, is_default, phone_number_id, connected_at, created_at')
+    .select('id, owner_user_id, label, status, is_default, phone_number_id, connected_at, created_at, read_groups')
     .eq('account_id', accountId)
     .order('is_default', { ascending: false })
     .order('created_at', { ascending: true })
@@ -235,6 +248,7 @@ async function listNumbers(accountId: string, userId: string, all: boolean) {
     owner_name: n.owner_user_id ? nameByUser.get(n.owner_user_id) ?? null : null,
     mine: n.owner_user_id === userId,
     connected_at: n.connected_at,
+    read_groups: n.read_groups === true,
   }))
 }
 
@@ -360,7 +374,7 @@ async function sessionState(
       try {
         const { url, hash } = await newWebhookUrl(siteOrigin(request))
         await supabaseAdmin().from('dapi_sessions').update({ webhook_token_hash: hash }).eq('session_id', row.session_id)
-        await enableWebhook(client, row.session_id, url)
+        await enableWebhook(client, row.session_id, url, await readsGroups(accountId, ownerUserId))
       } catch (err) {
         console.error('[dapi] enabling webhook failed:', (err as Error).message)
       }
@@ -469,6 +483,8 @@ export async function POST(request: Request) {
     }
 
     const sessionId = dapiSessionIdFor(accountId)
+    // Reconnecting a number that reads groups keeps reading them.
+    const readGroups = await readsGroups(accountId, owner)
 
     // A fresh secret per session; only its hash is stored.
     const hook = await newWebhookUrl(siteOrigin(request))
@@ -496,14 +512,14 @@ export async function POST(request: Request) {
       connectionMode: mode,
       ...(pairPhone ? { pairPhone } : {}),
       webhookUrl: hook.url,
-      ignoreGroups: true,
+      ignoreGroups: !readGroups,
       ignoreStatus: true,
       historySync: false,
     })
     await recordShape(sessionId, 'debug:create', createdRaw)
     await call(Promise.resolve(createdRaw))
     try {
-      await enableWebhook(client, sessionId, hook.url)
+      await enableWebhook(client, sessionId, hook.url, readGroups)
     } catch (err) {
       // Retried by GET once the number is connected.
       console.error('[dapi] enabling webhook failed:', (err as Error).message)
@@ -549,6 +565,7 @@ export async function PATCH(request: Request) {
       label?: string | null
       is_default?: boolean
       owner_user_id?: string
+      read_groups?: boolean
     }
     const found = await manageableNumber(accountId, userId, manager, body.channel_id ?? null)
     if ('error' in found) return found.error
@@ -570,10 +587,40 @@ export async function PATCH(request: Request) {
       await admin.from('whatsapp_config').update({ is_default: false }).eq('account_id', accountId).eq('is_default', true)
       await admin.from('whatsapp_config').update({ is_default: true }).eq('id', found.row.id)
     }
+    if (typeof body.read_groups === 'boolean') {
+      if (!manager) return NextResponse.json({ error: 'Só dono e admin ligam a leitura de grupos.' }, { status: 403 })
+      const failure = await setReadGroups(found.row, body.read_groups)
+      if (failure) return failure
+    }
     return NextResponse.json({ ok: true })
   } catch (err) {
     return dapiFailure(err)
   }
+}
+
+/**
+ * Switch group reading on or off for a number (migration 052): D-API only
+ * delivers group messages when the session stops ignoring them.
+ */
+async function setReadGroups(
+  row: { id: string; phone_number_id: string; status: string },
+  on: boolean,
+): Promise<NextResponse | null> {
+  if (row.phone_number_id.startsWith('dapi:') && row.status === 'connected' && hasDapiApiKey()) {
+    try {
+      await call(
+        dapiClient().sessions.updateIgnoreSettings(row.phone_number_id.replace(/^dapi:/, ''), {
+          ignoreGroups: !on,
+          ignoreStatus: true,
+        }),
+      )
+    } catch (err) {
+      console.error('[dapi] group setting failed:', (err as Error).message)
+      return NextResponse.json({ error: 'Não foi possível mudar a leitura de grupos agora. Tente de novo.' }, { status: 502 })
+    }
+  }
+  await supabaseAdmin().from('whatsapp_config').update({ read_groups: on }).eq('id', row.id)
+  return null
 }
 
 /**

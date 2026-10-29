@@ -58,8 +58,9 @@ export function dapiSessionIdFor(accountId: string): string {
   return `labcrm-${accountId}-${Date.now().toString(36)}`
 }
 
-/** Digits only: D-API addresses contacts by phone number. */
+/** Digits only: D-API addresses contacts by phone number, groups by their id. */
 function toNumber(to: string): string {
+  if (to.endsWith('@g.us')) return to
   return to.split('@')[0].replace(/\D/g, '')
 }
 

@@ -11,7 +11,7 @@ import {
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
-import { Search, ChevronDown, X } from "lucide-react";
+import { Search, ChevronDown, X, Users } from "lucide-react";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -69,6 +69,8 @@ export function ConversationList({
 
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<InboxFilter>("all");
+  // WhatsApp groups (Starter, migration 052) live in their own tab.
+  const [kind, setKind] = useState<"chats" | "groups">("chats");
   // Starter accounts with several numbers: owner / admin can narrow the
   // list to one number (agents only see their own chats anyway).
   const { user, account, canManageMembers } = useAuth();
@@ -168,8 +170,22 @@ export function ConversationList({
     return m;
   }, [tags]);
 
+  const groupStats = useMemo(() => {
+    let count = 0;
+    let unread = 0;
+    for (const c of conversations) {
+      if (!c.is_group || c.contact?.group_hidden_at) continue;
+      count += 1;
+      if (c.unread_count > 0) unread += 1;
+    }
+    return { count, unread };
+  }, [conversations]);
+  const showGroupTabs = account?.plan === "starter" && (groupStats.count > 0 || kind === "groups");
+
   const filtered = useMemo(() => {
-    let result = conversations;
+    let result = conversations.filter((c) =>
+      kind === "groups" ? c.is_group && !c.contact?.group_hidden_at : !c.is_group
+    );
 
     if (filter === "unread") {
       result = result.filter((c) => c.unread_count > 0);
@@ -204,7 +220,7 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, filter, search, selectedTagIds, selectedCompany, channelFilter, user?.id]);
+  }, [conversations, kind, filter, search, selectedTagIds, selectedCompany, channelFilter, user?.id]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
@@ -242,6 +258,29 @@ export function ConversationList({
     <div className="flex h-full w-full flex-col border-r border-border bg-card lg:w-80">
       {/* Search + Filter */}
       <div className="space-y-2 border-b border-border p-3">
+        {showGroupTabs && (
+          <div className="grid grid-cols-2 gap-1 rounded-md bg-muted p-0.5 text-xs">
+            {(["chats", "groups"] as const).map((k) => (
+              <button
+                key={k}
+                type="button"
+                onClick={() => setKind(k)}
+                className={cn(
+                  "inline-flex items-center justify-center gap-1.5 rounded px-2 py-1 font-medium transition-colors",
+                  kind === k ? "bg-card text-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {k === "groups" && <Users className="h-3.5 w-3.5" />}
+                {k === "chats" ? t("tabChats") : t("tabGroups")}
+                {k === "groups" && groupStats.unread > 0 && (
+                  <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
+                    {groupStats.unread}
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="relative">
           <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <Input
@@ -452,7 +491,9 @@ export function ConversationList({
           </div>
         ) : filtered.length === 0 ? (
           <div className="px-4 py-12 text-center">
-            <p className="text-sm text-muted-foreground">{t("noConversations")}</p>
+            <p className="text-sm text-muted-foreground">
+              {kind === "groups" ? t("noGroups") : t("noConversations")}
+            </p>
           </div>
         ) : (
           <div className="flex flex-col">
@@ -486,7 +527,9 @@ function ConversationItem({
   t,
 }: ConversationItemProps) {
   const contact = conversation.contact;
-  const displayName = contact?.name || contact?.phone || t("unknown");
+  const displayName = conversation.is_group
+    ? contact?.name || t("unnamedGroup")
+    : contact?.name || contact?.phone || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
 
   const handleClick = useCallback(() => {
@@ -515,6 +558,8 @@ function ConversationItem({
             alt={displayName}
             className="h-10 w-10 rounded-full object-cover"
           />
+        ) : conversation.is_group ? (
+          <Users className="h-4 w-4 text-muted-foreground" />
         ) : (
           initials
         )}

@@ -158,6 +158,8 @@ export default function ContactsPage() {
       let query = supabase
         .from('contacts')
         .select('*', { count: 'exact' })
+        // WhatsApp groups (migration 052) are chats, not contacts.
+        .eq('is_group', false)
         .order('created_at', { ascending: false })
         .range(from, to);
 

@@ -159,7 +159,8 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
             )}
           </div>
 
-          {/* Phone */}
+          {/* Phone (a WhatsApp group has none, migration 052) */}
+          {!contact.is_group && (
           <div className="mt-4 space-y-2">
             <button
               onClick={handleCopyPhone}
@@ -183,6 +184,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               </div>
             )}
           </div>
+          )}
 
           {/* Divider */}
           <div className="my-4 border-t border-border" />
@@ -216,7 +218,8 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
           {/* Divider */}
           <div className="my-4 border-t border-border" />
 
-          {/* Active Deals */}
+          {/* Active Deals — groups are not leads */}
+          {!contact.is_group && (
           <div>
             <div className="flex items-center gap-2 px-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
               <DollarSign className="h-3 w-3" />
@@ -256,6 +259,7 @@ export function ContactSidebar({ contact }: ContactSidebarProps) {
               )}
             </div>
           </div>
+          )}
 
           {/* Divider */}
           <div className="my-4 border-t border-border" />

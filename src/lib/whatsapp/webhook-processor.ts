@@ -711,7 +711,7 @@ async function flagBroadcastReplyIfAny(accountId: string, contactId: string) {
  * to one conversation. Returns null when we never received the parent
  * (e.g. a swipe-reply to a message older than this CRM install).
  */
-async function lookupInternalIdByMetaId(
+export async function lookupInternalIdByMetaId(
   metaId: string,
   conversationId: string
 ): Promise<string | null> {
@@ -1152,7 +1152,7 @@ async function processMessage(
   })
 }
 
-async function parseMessageContent(
+export async function parseMessageContent(
   message: WhatsAppMessage,
   accessToken: string,
   // Tenancy + opt-out for the media mirror. Null disables mirroring

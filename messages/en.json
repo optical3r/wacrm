@@ -174,7 +174,11 @@
       "clearAll": "Clear all",
       "noConversations": "No conversations found",
       "noMessagesYet": "No messages yet",
-      "unknown": "Unknown"
+      "unknown": "Unknown",
+      "tabChats": "Chats",
+      "tabGroups": "Groups",
+      "unnamedGroup": "Unnamed group",
+      "noGroups": "No groups yet. Turn on \"Read groups\" for the number in Settings > WhatsApp."
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
@@ -362,7 +366,15 @@
       "disconnected": "This number is disconnected. Reconnect WhatsApp in Settings to reply.",
       "allNumbers": "All numbers",
       "mine": "My chats",
-      "byNumber": "Number"
+      "byNumber": "Number",
+      "notInGroup": "Your number is not in this group. Only members of the group can reply.",
+      "groupMember": "Member",
+      "hideGroup": "Hide group",
+      "hideGroupConfirm": "Hide this group from the inbox? Its new messages will no longer be saved. You can show it again in Settings > WhatsApp.",
+      "groupHidden": "Group hidden.",
+      "hideGroupFailed": "Could not hide the group.",
+      "groupLabel": "WhatsApp group",
+      "unnamedGroup": "Unnamed group"
     }
   },
   "Contacts": {
@@ -2117,7 +2129,16 @@
       "changeOwner": "Change member",
       "changeOwnerLabel": "Number's team member",
       "ownerChanged": "Number's team member updated.",
-      "cancel": "Cancel"
+      "cancel": "Cancel",
+      "readGroups": "Read groups",
+      "readGroupsOn": "Reading groups",
+      "groupsOnToast": "Group reading on. New group messages show in the inbox Groups tab.",
+      "groupsOffToast": "Group reading off.",
+      "hiddenGroupsTitle": "Hidden groups",
+      "hiddenGroupsDesc": "Groups that don't show in the inbox and whose messages are not saved.",
+      "unnamedGroup": "Unnamed group",
+      "showGroup": "Show again",
+      "groupShown": "The group shows again from its next message."
     }
   },
   "SignupPage": {

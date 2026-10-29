@@ -103,6 +103,7 @@ export async function resolveSendChannel(
   let plan: string | null = null
   let assignedAgentId: string | null = null
   let lastChannelId: string | null = null
+  let groupChannelIds: string[] | null = null
 
   if (channels.length > 1 || opts.role === 'agent' || opts.channelId) {
     const { data: account } = await db.from('accounts').select('plan').eq('id', accountId).maybeSingle()
@@ -112,13 +113,20 @@ export async function resolveSendChannel(
   if (plan === 'starter' && (opts.conversationId || opts.contactId)) {
     let query = db
       .from('conversations')
-      .select('assigned_agent_id, last_channel_id')
+      .select('assigned_agent_id, last_channel_id, is_group, channel_ids')
       .eq('account_id', accountId)
     query = opts.conversationId ? query.eq('id', opts.conversationId) : query.eq('contact_id', opts.contactId!)
     const { data: conv } = await query.limit(1).maybeSingle()
-    const row = conv as { assigned_agent_id?: string | null; last_channel_id?: string | null } | null
+    const row = conv as {
+      assigned_agent_id?: string | null
+      last_channel_id?: string | null
+      is_group?: boolean
+      channel_ids?: string[] | null
+    } | null
     assignedAgentId = row?.assigned_agent_id ?? null
     lastChannelId = row?.last_channel_id ?? null
+    // Groups (migration 052): only numbers that are in the group.
+    if (row?.is_group) groupChannelIds = row.channel_ids ?? []
   }
 
   const channel = pickSendChannel(channels, {
@@ -128,6 +136,7 @@ export async function resolveSendChannel(
     requestedChannelId: opts.channelId,
     assignedAgentId,
     lastChannelId,
+    groupChannelIds,
   })
   return {
     channel,

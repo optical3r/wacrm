@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { translateDapiWebhook } from './dapi-webhook'
+import { extractDapiGroupMessages, translateDapiWebhook } from './dapi-webhook'
 import { decodeDapiMediaId } from './dapi'
 
 const PNID = 'dapi:labcrm-acc1'
@@ -167,5 +167,69 @@ describe('translateDapiWebhook', () => {
     const msg = firstChange(t).value.messages![0]
     expect(msg.type).toBe('image')
     expect(decodeDapiMediaId(msg.image!.id)).toMatchObject({ url: 'https://cdn.example/x.jpg' })
+  })
+})
+
+describe('extractDapiGroupMessages', () => {
+  it('reads a Baileys group message with its participant', () => {
+    const payload = {
+      event: 'messages.upsert',
+      data: { key: { remoteJid: '120363000111@g.us', id: 'G1', participant: '5571911112222@s.whatsapp.net' }, pushName: 'Lia', message: { conversation: 'Oi grupo' } },
+    }
+    expect(translateDapiWebhook(payload, PNID).body).toBeNull()
+    const [m] = extractDapiGroupMessages(payload, PNID)
+    expect(m).toMatchObject({ id: 'G1', groupJid: '120363000111@g.us', fromMe: false, senderId: '5571911112222', senderName: 'Lia' })
+    expect(m.message).toMatchObject({ type: 'text', text: { body: 'Oi grupo' }, from: '120363000111' })
+  })
+
+  it('reads the D-API envelope with is_group and group_name', () => {
+    const payload = {
+      event: 'messages.received',
+      data: {
+        id: '3EBG',
+        type: 'text',
+        message: 'Bom dia, equipe',
+        timestamp: 1793044800000,
+        fromMe: false,
+        is_group: true,
+        group_name: 'Vendas',
+        from: { jid: '5571933334444@s.whatsapp.net', lid: '99887766@lid', name: 'Davi' },
+        to: { jid: '120363000222@g.us', name: 'Vendas' },
+      },
+    }
+    expect(translateDapiWebhook(payload, PNID).body).toBeNull()
+    expect(extractDapiGroupMessages(payload, PNID)[0]).toMatchObject({
+      id: '3EBG',
+      groupJid: '120363000222@g.us',
+      groupName: 'Vendas',
+      senderId: '5571933334444',
+      senderName: 'Davi',
+      timestamp: '1793044800',
+    })
+  })
+
+  it('keeps the opaque id when the phone is hidden', () => {
+    const payload = {
+      event: 'messages.received',
+      data: { id: 'L1', type: 'text', message: 'x', is_group: true, chatId: '120363000333@g.us', from: { jid: '4455@lid', name: 'Eva' } },
+    }
+    expect(extractDapiGroupMessages(payload, PNID)[0]).toMatchObject({ groupJid: '120363000333@g.us', senderId: '4455@lid', senderName: 'Eva' })
+  })
+
+  it('marks our own group messages as fromMe with no sender', () => {
+    const payload = {
+      event: 'messages.sent',
+      data: { id: 'S1', type: 'text', message: 'Enviado', fromMe: true, is_group: true, to: { jid: '120363000444@g.us' } },
+    }
+    expect(extractDapiGroupMessages(payload, PNID)[0]).toMatchObject({ id: 'S1', fromMe: true, senderId: null })
+    expect(translateDapiWebhook(payload, PNID).body).toBeNull()
+  })
+
+  it('ignores one-to-one messages, receipts and connection events', () => {
+    expect(
+      extractDapiGroupMessages({ event: 'messages.received', data: { id: 'P1', type: 'text', message: 'oi', is_group: false, from: { jid: '5571988887777@s.whatsapp.net' } } }, PNID),
+    ).toEqual([])
+    expect(extractDapiGroupMessages({ event: 'message.read', data: { id: 'G1', to: { jid: '120363000111@g.us' } } }, PNID)).toEqual([])
+    expect(extractDapiGroupMessages({ event: 'connection.status', data: { status: 'connected' } }, PNID)).toEqual([])
   })
 })

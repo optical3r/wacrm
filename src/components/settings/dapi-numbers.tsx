@@ -6,6 +6,7 @@ import { useTranslations } from 'next-intl';
 import { Loader2, Pencil, Star, Trash2, Unplug, UserCog } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { DapiMember, DapiNumber } from './dapi-connect';
 
@@ -71,6 +72,10 @@ export function DapiNumbers({
     }
   }
 
+  async function toggleGroups(n: DapiNumber, on: boolean) {
+    if (await patch(n, { read_groups: on })) toast.success(on ? t('groupsOnToast') : t('groupsOffToast'));
+  }
+
   async function disconnect(n: DapiNumber) {
     if (!window.confirm(t('disconnectConfirm'))) return;
     if (await request(n.id, { method: 'DELETE' }, `/api/whatsapp/dapi?channel_id=${encodeURIComponent(n.id)}`)) {
@@ -115,6 +120,19 @@ export function DapiNumbers({
                   {n.phone ? <span className="font-mono">+{n.phone}</span> : t('noPhone')}
                   {n.label && n.owner_name ? ` · ${t('ownerLine', { name: n.owner_name })}` : ''}
                 </p>
+                {canManage && (
+                  <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                    <Switch
+                      checked={n.read_groups === true}
+                      disabled={working || n.status !== 'connected'}
+                      onCheckedChange={(v) => void toggleGroups(n, v)}
+                    />
+                    {t('readGroups')}
+                  </label>
+                )}
+                {!canManage && n.read_groups && (
+                  <p className="mt-1 text-xs text-muted-foreground">{t('readGroupsOn')}</p>
+                )}
                 {relinking === n.id && (
                   <div className="mt-2 flex flex-wrap items-center gap-2">
                     <select

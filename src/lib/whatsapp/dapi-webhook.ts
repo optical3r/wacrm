@@ -273,7 +273,8 @@ function normalizeMessage(sessionId: string, raw: Obj): Normalized | null {
     chat = str(g(meta, 'remoteJidAlt', 'senderPn', 'chatPn', 'senderAlt', 'participantPn')) ?? chat
   }
   if (!isPhoneJid(chat.includes('@') ? chat : `${chat}@s.whatsapp.net`)) return null
-  if (bool(g(meta, 'isGroup', 'IsGroup', 'is_group'))) return null
+  // Groups go to the group handler (extractDapiGroupMessages), never here.
+  if (isGroupPayload(raw, meta)) return null
 
   const content = g(raw, 'message')
   const body = isObj(content) ? fromProto(sessionId, content) : fromFlat(sessionId, raw)
@@ -289,6 +290,101 @@ function normalizeMessage(sessionId: string, raw: Obj): Normalized | null {
       str(g(meta, 'PushName', 'pushName', 'senderName')),
     timestamp: seconds(g(raw, 'messageTimestamp', 'timestamp') ?? g(meta, 'Timestamp', 'timestamp')),
     message: { ...body, id, from: digits(chat), timestamp: '' } as WhatsAppMessage,
+  }
+}
+
+// ------------------------------------------------------------
+// Groups (migration 052)
+// ------------------------------------------------------------
+
+/** A message in a WhatsApp group, as the group handler stores it. */
+export interface DapiGroupMessage {
+  id: string
+  /** "<digits>@g.us" */
+  groupJid: string
+  groupName?: string
+  fromMe: boolean
+  /** Who wrote it: phone digits when known, else WhatsApp's opaque id ("…@lid"). */
+  senderId: string | null
+  senderName?: string
+  timestamp: string
+  /** Meta-shaped body; `from` is the group's digits. */
+  message: WhatsAppMessage
+}
+
+const jidOf = (v: unknown) => str(v) ?? str(g(v, 'jid', 'id'))
+
+function groupJidOf(raw: Obj, meta: Obj): string | null {
+  const places = [
+    g(meta, 'remoteJid', 'chatId', 'chat', 'chat_jid', 'groupJid', 'group_jid', 'groupId', 'group_id'),
+    g(raw, 'chatId', 'chat', 'groupJid', 'group_jid', 'groupId', 'group_id', 'group'),
+    g(meta, 'to', 'recipient'),
+    g(raw, 'to'),
+    g(meta, 'from'),
+    g(raw, 'from'),
+  ]
+  for (const place of places) {
+    const jid = jidOf(place)
+    if (jid?.endsWith('@g.us')) return jid
+  }
+  // A bare group id next to an is_group flag.
+  const bare = str(g(raw, 'groupId', 'group_id')) ?? str(g(g(raw, 'group'), 'id'))
+  if (bare && /^[\d-]+$/.test(bare)) return `${bare}@g.us`
+  return null
+}
+
+function isGroupPayload(raw: Obj, meta: Obj): boolean {
+  return bool(g(meta, 'isGroup', 'IsGroup', 'is_group')) || bool(g(raw, 'isGroup', 'is_group')) || groupJidOf(raw, meta) !== null
+}
+
+/** The participant who wrote a group message (none on our own). */
+function groupSender(raw: Obj, meta: Obj): string | null {
+  const phoneJid = [
+    g(meta, 'participantPn', 'participantAlt', 'senderPn', 'senderAlt'),
+    g(raw, 'participantPn', 'participantAlt', 'senderPn'),
+    g(meta, 'participant', 'author', 'sender'),
+    g(raw, 'participant', 'author', 'sender'),
+    g(raw, 'from'),
+    g(meta, 'from'),
+  ]
+    .map(jidOf)
+    .find((j) => j && !j.endsWith('@g.us') && !j.endsWith('@lid'))
+  if (phoneJid && digits(phoneJid)) return digits(phoneJid)
+  const lid =
+    str(g(g(raw, 'from'), 'lid')) ??
+    [g(meta, 'participant', 'author', 'sender'), g(raw, 'participant', 'author', 'sender'), g(raw, 'from'), g(meta, 'from')]
+      .map(jidOf)
+      .find((j) => j?.endsWith('@lid'))
+  return lid ? (lid.includes('@') ? lid : `${lid}@lid`) : null
+}
+
+function normalizeGroupMessage(sessionId: string, raw: Obj): DapiGroupMessage | null {
+  const key = g(raw, 'key')
+  const info = g(raw, 'info')
+  const meta = isObj(key) ? key : isObj(info) ? info : raw
+  if (!isGroupPayload(raw, meta)) return null
+  const groupJid = groupJidOf(raw, meta)
+  const id = str(g(meta, 'id', 'messageId', 'ID'))
+  if (!groupJid || !id) return null
+
+  const content = g(raw, 'message')
+  const body = isObj(content) ? fromProto(sessionId, content) : fromFlat(sessionId, raw)
+  if (!body) return null
+
+  const fromMe = bool(g(meta, 'fromMe', 'IsFromMe', 'isFromMe', 'from_me'))
+  return {
+    id,
+    groupJid,
+    groupName: str(g(raw, 'group_name', 'groupName', 'subject', 'chatName')) ?? str(g(g(raw, 'group'), 'name', 'subject')),
+    fromMe,
+    senderId: fromMe ? null : groupSender(raw, meta),
+    senderName: fromMe
+      ? undefined
+      : str(g(raw, 'pushName', 'senderName', 'notifyName', 'from_name')) ??
+        str(g(g(raw, 'from'), 'name')) ??
+        str(g(meta, 'PushName', 'pushName', 'senderName')),
+    timestamp: seconds(g(raw, 'messageTimestamp', 'timestamp') ?? g(meta, 'Timestamp', 'timestamp')),
+    message: { ...body, id, from: digits(groupJid), timestamp: '' } as WhatsAppMessage,
   }
 }
 
@@ -435,4 +531,23 @@ export function translateDapiWebhook(payload: unknown, phoneNumberId: string): D
     echoIds,
     connection,
   }
+}
+
+/**
+ * Group messages in a D-API payload. translateDapiWebhook drops these
+ * (groups are not customers); the route hands them to the group handler
+ * instead, for numbers with group reading on.
+ */
+export function extractDapiGroupMessages(payload: unknown, phoneNumberId: string): DapiGroupMessage[] {
+  const root = isObj(payload) ? payload : { data: payload }
+  const event = eventName(root)
+  const data = g(root, 'data', 'payload', 'body') ?? root
+  if (connectionFrom(event, data)) return []
+  const isReceipt =
+    /receipt|ack|update|status|delivered|\.read$/.test(event) && !/upsert|received|message\.new|messages?$/.test(event)
+  if (isReceipt) return []
+  const sessionId = phoneNumberId.slice('dapi:'.length)
+  return candidates(data)
+    .map((c) => normalizeGroupMessage(sessionId, c))
+    .filter((m): m is DapiGroupMessage => m !== null)
 }

@@ -39,7 +39,8 @@ function cappedPostgrest(tables: Record<string, Row[]>) {
           return builder;
         },
         eq(col: string, value: unknown) {
-          filters.push((row) => row[col] === value);
+          // Fixture contacts carry no is_group: they are people (migration 052).
+          filters.push((row) => (col === 'is_group' ? row[col] ?? false : row[col]) === value);
           return builder;
         },
         neq(col: string, value: unknown) {

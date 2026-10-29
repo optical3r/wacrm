@@ -34,6 +34,8 @@ export interface NotifiableMessage {
   sender_type: SenderType;
   content_type: ContentType;
   content_text?: string | null;
+  /** Set only on WhatsApp group messages (migration 052). */
+  sender_wa_id?: string | null;
 }
 
 export interface ShouldNotifyOptions {
@@ -65,6 +67,8 @@ export function shouldNotifyForMessage(
   opts: ShouldNotifyOptions,
 ): boolean {
   if (msg.sender_type !== "customer") return false;
+  // Groups stay quiet: they count as unread in their own tab only.
+  if (msg.sender_wa_id) return false;
 
   const now = opts.now ?? Date.now();
   for (const [id, at] of opts.seen) {

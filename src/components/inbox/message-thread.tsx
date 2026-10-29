@@ -29,6 +29,7 @@ import {
   RefreshCw,
   PanelRightOpen,
   PanelRightClose,
+  EyeOff,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -171,7 +172,11 @@ export function MessageThread({
   const tTimer = useTranslations("Inbox.sessionTimer");
   const tQuote = useTranslations("Inbox.replyQuote");
 
-  const { user, account, isAgent, canSendMessages } = useAuth();
+  const { user, account, isAgent, canSendMessages, canManageMembers } = useAuth();
+  // A WhatsApp group (Starter, migration 052): only the account's numbers
+  // that are in it can write to it.
+  const isGroup = Boolean(conversation?.is_group);
+  const [hidingGroup, setHidingGroup] = useState(false);
   // Starter (QR code via D-API) has no Meta 24h service window.
   const noServiceWindow = account?.plan === "starter";
   const tChannel = useTranslations("Inbox.channel");
@@ -196,13 +201,19 @@ export function MessageThread({
         requestedChannelId: isAgent ? null : chosenChannelId,
         assignedAgentId: conversation?.assigned_agent_id ?? null,
         lastChannelId: conversation?.last_channel_id ?? null,
+        groupChannelIds: isGroup ? (conversation?.channel_ids ?? []) : null,
       });
       return { channel, blocked: null as string | null };
     } catch (err) {
       const code = (err as ChannelError).code;
       return {
         channel: null,
-        blocked: code === "no_own_channel" ? tChannel("noOwnNumber") : tChannel("disconnected"),
+        blocked:
+          code === "no_own_channel"
+            ? tChannel("noOwnNumber")
+            : code === "not_in_group"
+              ? tChannel("notInGroup")
+              : tChannel("disconnected"),
       };
     }
   }, [
@@ -214,6 +225,8 @@ export function MessageThread({
     chosenChannelId,
     conversation?.assigned_agent_id,
     conversation?.last_channel_id,
+    conversation?.channel_ids,
+    isGroup,
     tChannel,
   ]);
   // Read by the send handlers without re-creating them on every change.
@@ -819,9 +832,10 @@ export function MessageThread({
     (m: Message): string => {
       const isAgentMsg =
         m.sender_type === "agent" || m.sender_type === "bot";
-      return isAgentMsg ? t("you") : contactDisplayName;
+      if (isAgentMsg) return t("you");
+      return (conversation?.is_group ? m.sender_name : null) || contactDisplayName;
     },
-    [contactDisplayName, t],
+    [contactDisplayName, t, conversation?.is_group],
   );
 
   const handleStartReply = useCallback(
@@ -939,7 +953,7 @@ export function MessageThread({
     );
   }
 
-  const displayName = contact.name || contactHandle(contact);
+  const displayName = isGroup ? contact.name || tChannel("unnamedGroup") : contact.name || contactHandle(contact);
   const messageGroups = groupMessagesByDate(messages);
   const currentStatus = STATUS_OPTIONS.find(
     (s) => s.value === conversation.status
@@ -962,7 +976,36 @@ export function MessageThread({
       : tChannel("via", { name: channel.name });
   };
 
-  const connectedChannels = channels.filter((c) => c.status === "connected");
+  const connectedChannels = channels.filter(
+    (c) => c.status === "connected" && (!isGroup || (conversation.channel_ids ?? []).includes(c.id))
+  );
+  // Who wrote a group message: the participant's name, else their phone.
+  const groupAuthorFor = (msg: Message): string | null => {
+    if (!isGroup || msg.sender_type !== "customer") return null;
+    if (msg.sender_name) return msg.sender_name;
+    if (msg.sender_wa_id && /^\d+$/.test(msg.sender_wa_id)) return `+${msg.sender_wa_id}`;
+    return tChannel("groupMember");
+  };
+  const hideGroup = async () => {
+    if (!window.confirm(tChannel("hideGroupConfirm"))) return;
+    setHidingGroup(true);
+    try {
+      const res = await fetch("/api/whatsapp/groups", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ contact_id: contact.id, hidden: true }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+      toast.success(tChannel("groupHidden"));
+      onRefresh?.();
+      onBack?.();
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : tChannel("hideGroupFailed"));
+    } finally {
+      setHidingGroup(false);
+    }
+  };
   const channelBar =
     multiNumber && sendChannel.channel ? (
       <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
@@ -1021,7 +1064,7 @@ export function MessageThread({
           <div className="min-w-0">
             <h2 className="truncate text-sm font-semibold text-foreground">{displayName}</h2>
             <p className="truncate text-xs text-muted-foreground">
-              {contactHandle(contact)}
+              {isGroup ? tChannel("groupLabel") : contactHandle(contact)}
             </p>
           </div>
           {/* Session timer badge — hidden on the narrowest phones so
@@ -1085,6 +1128,19 @@ export function MessageThread({
               <RefreshCw
                 className={cn("h-3.5 w-3.5", isRefreshing && "animate-spin")}
               />
+            </button>
+          )}
+
+          {isGroup && canManageMembers && (
+            <button
+              type="button"
+              onClick={() => void hideGroup()}
+              disabled={hidingGroup}
+              aria-label={tChannel("hideGroup")}
+              title={tChannel("hideGroup")}
+              className="inline-flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-60"
+            >
+              <EyeOff className="h-3.5 w-3.5" />
             </button>
           )}
 
@@ -1214,7 +1270,7 @@ export function MessageThread({
                           authorLabel:
                             parent.sender_type === "agent" || parent.sender_type === "bot"
                               ? t("me") 
-                              : contact?.name || contact?.phone || t("unknown"),
+                              : (isGroup ? parent.sender_name : null) || contact?.name || contact?.phone || t("unknown"),
                           preview: buildReplyPreview(parent, tQuote),
                         }
                       : null;
@@ -1242,6 +1298,7 @@ export function MessageThread({
                         <MessageBubble
                           message={msg}
                           channelLabel={channelLabelFor(msg)}
+                          authorName={groupAuthorFor(msg)}
                           reply={reply}
                           reactions={msgReactions}
                           currentUserId={user?.id}

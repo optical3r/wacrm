@@ -23,6 +23,8 @@ export interface DapiNumber {
   owner_name: string | null;
   mine: boolean;
   connected_at: string | null;
+  /** Reads WhatsApp groups (migration 052). */
+  read_groups?: boolean;
 }
 
 export interface DapiMember {

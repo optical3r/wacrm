@@ -27,6 +27,7 @@ import { SettingsPanelHead } from './settings-panel-head';
 import { CoexyConnect, type CoexyState } from './coexy-connect';
 import { DapiConnect, type DapiState } from './dapi-connect';
 import { DapiNumbers } from './dapi-numbers';
+import { DapiHiddenGroups } from './dapi-hidden-groups';
 import {
   Accordion,
   AccordionItem,
@@ -581,6 +582,7 @@ export function WhatsAppConfig() {
               onChanged={() => void reloadDapi()}
             />
           )}
+          {dapi.can_manage && <DapiHiddenGroups />}
         </div>
       </section>
     );

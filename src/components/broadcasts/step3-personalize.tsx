@@ -96,6 +96,7 @@ export function Step3Personalize({
         supabase
           .from('contacts')
           .select('*')
+          .eq('is_group', false)
           .order('created_at', { ascending: false })
           .limit(1)
           .maybeSingle(),

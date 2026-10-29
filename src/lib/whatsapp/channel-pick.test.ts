@@ -62,3 +62,25 @@ describe('pickSendChannel — Starter owner / admin and automations', () => {
     expect(() => pickSendChannel([], { plan: 'starter' })).toThrow(expect.objectContaining({ code: 'whatsapp_not_configured' }))
   })
 })
+
+describe('pickSendChannel — WhatsApp groups', () => {
+  it('lets an agent write only when their number is in the group', () => {
+    expect(pickSendChannel(all, { plan: 'starter', role: 'agent', userId: 'u-bruno', groupChannelIds: ['ch-bruno'] }).id).toBe('ch-bruno')
+    expect(() => pickSendChannel(all, { plan: 'starter', role: 'agent', userId: 'u-ana', groupChannelIds: ['ch-bruno'] })).toThrow(
+      expect.objectContaining({ code: 'not_in_group' }),
+    )
+  })
+
+  it('limits owner / admin to the numbers in the group', () => {
+    expect(pickSendChannel(all, { plan: 'starter', role: 'admin', userId: 'u-owner', groupChannelIds: ['ch-bruno'] }).id).toBe('ch-bruno')
+    expect(() =>
+      pickSendChannel(all, { plan: 'starter', role: 'admin', userId: 'u-owner', requestedChannelId: 'ch-ana', groupChannelIds: ['ch-bruno'] }),
+    ).toThrow(expect.objectContaining({ code: 'not_in_group' }))
+  })
+
+  it('refuses when no number of the account is in the group', () => {
+    expect(() => pickSendChannel(all, { plan: 'starter', role: 'admin', groupChannelIds: [] })).toThrow(
+      expect.objectContaining({ code: 'not_in_group' }),
+    )
+  })
+})

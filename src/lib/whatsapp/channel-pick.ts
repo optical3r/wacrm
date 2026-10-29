@@ -20,6 +20,7 @@ export type ChannelErrorCode =
   | 'channel_disconnected'
   | 'channel_forbidden'
   | 'channel_not_found'
+  | 'not_in_group'
 
 export class ChannelError extends Error {
   readonly code: ChannelErrorCode
@@ -36,6 +37,7 @@ const MESSAGES: Record<ChannelErrorCode, string> = {
   channel_disconnected: 'Este número está desconectado. Reconecte o WhatsApp para enviar.',
   channel_forbidden: 'Você só pode enviar pelo seu próprio número.',
   channel_not_found: 'Número não encontrado nesta conta.',
+  not_in_group: 'O seu número não está neste grupo. Só quem está no grupo pode responder.',
 }
 
 export function channelError(code: ChannelErrorCode): ChannelError {
@@ -63,6 +65,11 @@ export interface PickContext {
   assignedAgentId?: string | null
   /** The last number the customer wrote to. */
   lastChannelId?: string | null
+  /**
+   * Set for a WhatsApp group (migration 052): the numbers that are in it.
+   * Only those can write to the group.
+   */
+  groupChannelIds?: string[] | null
 }
 
 const isConnected = (c: Pick<ChannelLike, 'status'>) => c.status === 'connected'
@@ -71,8 +78,17 @@ const isConnected = (c: Pick<ChannelLike, 'status'>) => c.status === 'connected'
  * Choose the channel a send goes through. Pure; throws ChannelError.
  */
 export function pickSendChannel<T extends ChannelLike>(channels: T[], ctx: PickContext): T {
-  const sorted = sortChannels(channels)
-  if (sorted.length === 0) throw channelError('whatsapp_not_configured')
+  const all = sortChannels(channels)
+  if (all.length === 0) throw channelError('whatsapp_not_configured')
+  const inGroup = ctx.groupChannelIds ? new Set(ctx.groupChannelIds) : null
+  const sorted = inGroup ? all.filter((c) => inGroup.has(c.id)) : all
+  if (inGroup) {
+    if (sorted.length === 0) throw channelError('not_in_group')
+    if (ctx.requestedChannelId && !inGroup.has(ctx.requestedChannelId)) throw channelError('not_in_group')
+    if (ctx.role === 'agent' && !sorted.some((c) => c.owner_user_id && c.owner_user_id === ctx.userId)) {
+      throw channelError(all.some((c) => c.owner_user_id === ctx.userId) ? 'not_in_group' : 'no_own_channel')
+    }
+  }
 
   // Pro (and any non-Starter account): the single official number.
   if (ctx.plan !== 'starter') return sorted[0]

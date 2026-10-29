@@ -53,7 +53,8 @@ export async function GET(request: Request) {
     let query = ctx.supabase
       .from('contacts')
       .select(selectClause)
-      .eq('account_id', ctx.accountId);
+      .eq('account_id', ctx.accountId)
+      .eq('is_group', false);
 
     if (search) {
       query = query.or(`name.ilike.*${search}*,phone.ilike.*${search}*`);

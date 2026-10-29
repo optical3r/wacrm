@@ -2,7 +2,8 @@ import { NextResponse, after } from 'next/server'
 import { createHash } from 'node:crypto'
 import { createClient as createAdminClient, type SupabaseClient } from '@supabase/supabase-js'
 import { processWebhook } from '@/lib/whatsapp/webhook-processor'
-import { translateDapiWebhook } from '@/lib/whatsapp/dapi-webhook'
+import { extractDapiGroupMessages, translateDapiWebhook } from '@/lib/whatsapp/dapi-webhook'
+import { handleDapiGroupMessages } from '@/lib/whatsapp/group-inbound'
 import { dapiPhoneNumberId } from '@/lib/whatsapp/dapi'
 import { markDapiDisconnected, saveDapiConnection } from '@/lib/whatsapp/dapi-connection'
 
@@ -83,6 +84,15 @@ async function handle(session: SessionRow, payload: unknown) {
 
   try {
     if (translated.connection) await applyConnection(session, translated.connection)
+
+    // Groups (migration 052): stored apart from customer chats. Our own
+    // sends come back as fromMe too; let them land in `messages` first.
+    const groupMessages = extractDapiGroupMessages(payload, phoneNumberId)
+    if (groupMessages.length) {
+      if (groupMessages.some((m) => m.fromMe)) await new Promise((r) => setTimeout(r, ECHO_SETTLE_MS))
+      await handleDapiGroupMessages(admin, phoneNumberId, groupMessages)
+    }
+
     if (!translated.body) return
 
     // fromMe covers both replies typed on the phone and our own sends.

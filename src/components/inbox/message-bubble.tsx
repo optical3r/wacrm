@@ -29,6 +29,8 @@ interface MessageBubbleProps {
   message: Message;
   /** "via Ana" — the number the message went through, when there are several. */
   channelLabel?: string | null;
+  /** Group messages: who wrote it (migration 052). */
+  authorName?: string | null;
   /** Pre-computed quote info for messages that reply to another. */
   reply?: { authorLabel: string; preview: string } | null;
   reactions?: MessageReaction[];
@@ -262,6 +264,7 @@ function MessageContent({
 export function MessageBubble({
   message,
   channelLabel = null,
+  authorName = null,
   reply,
   reactions,
   currentUserId,
@@ -291,6 +294,9 @@ export function MessageBubble({
             : "rounded-bl-md bg-muted text-foreground",
         )}
       >
+        {authorName && (
+          <p className="mb-0.5 text-xs font-semibold text-primary">{authorName}</p>
+        )}
         {reply && (
           <ReplyQuote
             authorLabel={reply.authorLabel}

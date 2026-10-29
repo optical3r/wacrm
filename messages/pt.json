@@ -174,7 +174,11 @@
       "clearAll": "Limpar tudo",
       "noConversations": "Nenhuma conversa encontrada",
       "noMessagesYet": "Nenhuma mensagem ainda",
-      "unknown": "Desconhecido"
+      "unknown": "Desconhecido",
+      "tabChats": "Conversas",
+      "tabGroups": "Grupos",
+      "unnamedGroup": "Grupo sem nome",
+      "noGroups": "Nenhum grupo ainda. Ligue \"Ler grupos\" no número em Configurações > WhatsApp."
     },
     "messageThread": {
       "backToConversations": "Voltar às conversas",
@@ -362,7 +366,15 @@
       "disconnected": "Este número está desconectado. Reconecte o WhatsApp em Configurações para responder.",
       "allNumbers": "Todos os números",
       "mine": "Meus chats",
-      "byNumber": "Número"
+      "byNumber": "Número",
+      "notInGroup": "O seu número não está neste grupo. Só quem está no grupo pode responder.",
+      "groupMember": "Participante",
+      "hideGroup": "Ocultar grupo",
+      "hideGroupConfirm": "Ocultar este grupo do inbox? As novas mensagens dele deixam de ser gravadas. Você pode mostrá-lo de novo em Configurações > WhatsApp.",
+      "groupHidden": "Grupo ocultado.",
+      "hideGroupFailed": "Não foi possível ocultar o grupo.",
+      "groupLabel": "Grupo do WhatsApp",
+      "unnamedGroup": "Grupo sem nome"
     }
   },
   "Contacts": {
@@ -2117,7 +2129,16 @@
       "changeOwner": "Trocar atendente",
       "changeOwnerLabel": "Atendente do número",
       "ownerChanged": "Atendente do número atualizado.",
-      "cancel": "Cancelar"
+      "cancel": "Cancelar",
+      "readGroups": "Ler grupos",
+      "readGroupsOn": "Lendo grupos",
+      "groupsOnToast": "Leitura de grupos ligada. As novas mensagens dos grupos aparecem na aba Grupos do inbox.",
+      "groupsOffToast": "Leitura de grupos desligada.",
+      "hiddenGroupsTitle": "Grupos ocultos",
+      "hiddenGroupsDesc": "Grupos que não aparecem no inbox e cujas mensagens não são gravadas.",
+      "unnamedGroup": "Grupo sem nome",
+      "showGroup": "Mostrar de novo",
+      "groupShown": "O grupo volta a aparecer a partir da próxima mensagem."
     }
   },
   "SignupPage": {

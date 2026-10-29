@@ -28,12 +28,14 @@ export function useTotalUnread(): number {
     (async () => {
       const { data, error } = await supabase
         .from("conversations")
-        .select("id, unread_count");
+        .select("id, unread_count, is_group");
       if (cancelled || error || !data) return;
 
       const map = new Map<string, number>();
       let sum = 0;
-      for (const row of data as { id: string; unread_count: number }[]) {
+      for (const row of data as { id: string; unread_count: number; is_group?: boolean }[]) {
+        // WhatsApp groups (migration 052) count in their own tab only.
+        if (row.is_group) continue;
         const n = row.unread_count ?? 0;
         map.set(row.id, n);
         if (n > 0) sum += 1;
@@ -54,7 +56,8 @@ export function useTotalUnread(): number {
             if (oldRow.id) map.delete(oldRow.id);
           } else {
             const row = payload.new as Conversation;
-            map.set(row.id, row.unread_count ?? 0);
+            if (row.is_group) map.delete(row.id);
+            else map.set(row.id, row.unread_count ?? 0);
           }
           // Recompute — cheap, conversations per user stay small.
           let sum = 0;

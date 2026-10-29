@@ -115,6 +115,10 @@ export interface Contact {
   /** WhatsApp username without the leading @. Display only: usernames
    *  are user-changeable, so they must never key a contact. */
   wa_username?: string | null;
+  /** A WhatsApp group (Starter, migration 052), not a person. */
+  is_group?: boolean;
+  wa_group_id?: string | null;
+  group_hidden_at?: string | null;
   name?: string;
   email?: string;
   company?: string;
@@ -178,6 +182,8 @@ export interface Conversation {
   last_channel_id?: string | null;
   /** Every number this chat went through (migration 051). */
   channel_ids?: string[];
+  /** A WhatsApp group chat (migration 052). */
+  is_group?: boolean;
   last_message_text?: string;
   last_message_at?: string;
   unread_count: number;
@@ -240,6 +246,9 @@ export interface Message {
   sender_id?: string;
   /** Number (whatsapp_config row) the message went through (migration 051). */
   channel_id?: string | null;
+  /** Group messages: who wrote it (phone digits or an opaque id) and their name. */
+  sender_wa_id?: string | null;
+  sender_name?: string | null;
   content_type: ContentType;
   content_text?: string;
   media_url?: string;

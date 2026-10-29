@@ -186,7 +186,13 @@ export interface WaSendTarget {
 export function resolveContactSendTarget(contact: {
   phone?: string | null
   wa_user_id?: string | null
+  is_group?: boolean | null
+  wa_group_id?: string | null
 } | null | undefined): WaSendTarget | null {
+  // A WhatsApp group (Starter, migration 052) is addressed by its id.
+  if (contact?.is_group) {
+    return contact.wa_group_id?.endsWith('@g.us') ? { target: contact.wa_group_id, isPhone: false } : null
+  }
   const sanitized = sanitizePhoneForMeta(contact?.phone ?? '')
   if (isValidE164(sanitized)) return { target: sanitized, isPhone: true }
 

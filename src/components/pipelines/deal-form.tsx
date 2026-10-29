@@ -113,7 +113,7 @@ export function DealForm({
     let cancelled = false;
     (async () => {
       const [c, p] = await Promise.all([
-        supabase.from("contacts").select("*").order("name"),
+        supabase.from("contacts").select("*").eq("is_group", false).order("name"),
         supabase.from("profiles").select("*").order("full_name"),
       ]);
       if (cancelled) return;

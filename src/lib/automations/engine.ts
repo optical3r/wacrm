@@ -82,7 +82,7 @@ export async function runAutomationsForTrigger(input: DispatchInput): Promise<vo
     if (input.contactId) {
       const { data: owned, error: ownErr } = await db
         .from('contacts')
-        .select('id')
+        .select('id, is_group')
         .eq('id', input.contactId)
         .eq('account_id', input.accountId)
         .maybeSingle()
@@ -94,6 +94,8 @@ export async function runAutomationsForTrigger(input: DispatchInput): Promise<vo
         console.warn('[automations] contact not in account, refusing dispatch', input.contactId)
         return
       }
+      // WhatsApp groups (migration 052) never run automations.
+      if ((owned as { is_group?: boolean }).is_group) return
     }
 
     // Same argument for `context.conversation_id` (GHSA-m4fx-g6pr-hrw8).
