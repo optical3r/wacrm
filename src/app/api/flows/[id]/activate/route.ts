@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
-import { validateFlowForActivation } from '@/lib/flows/validate'
+import { findTriggerConflicts, validateFlowForActivation } from '@/lib/flows/validate'
 import { getT } from '@/lib/i18n/translate'
 
 const t = getT('Api')
@@ -73,7 +73,7 @@ export async function POST(
     const [{ data: flow }, { data: nodes }] = await Promise.all([
       admin
         .from('flows')
-        .select('name, trigger_type, trigger_config, entry_node_id')
+        .select('account_id, name, trigger_type, trigger_config, entry_node_id')
         .eq('id', id)
         .maybeSingle(),
       admin
@@ -96,6 +96,19 @@ export async function POST(
         node_type: string
         config: Record<string, unknown>
       }>,
+    )
+    // Another active flow answering the same message would silently win.
+    const { data: others } = await admin
+      .from('flows')
+      .select('name, trigger_type, trigger_config')
+      .eq('account_id', (flow as { account_id: string }).account_id)
+      .eq('status', 'active')
+      .neq('id', id)
+    issues.push(
+      ...findTriggerConflicts(
+        flow as { name: string; trigger_type: string; trigger_config: Record<string, unknown> },
+        (others ?? []) as Array<{ name: string; trigger_type: string; trigger_config: Record<string, unknown> }>,
+      ),
     )
     const blockers = issues.filter((i) => i.severity === 'error')
     if (blockers.length > 0) {

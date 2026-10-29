@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   decideFallback,
+  isExitMessage,
   resolveFallbackPolicy,
 } from "./fallback";
 import { DEFAULT_FALLBACK_POLICY, type FlowFallbackPolicy } from "./types";
@@ -63,7 +64,27 @@ const POLICY_REPROMPT_2_HANDOFF: FlowFallbackPolicy = {
   max_reprompts: 2,
   on_timeout_hours: 24,
   on_exhaust: "handoff",
+  exit_keywords: [],
 };
+
+describe("isExitMessage", () => {
+  it("matches a whole message that is an exit word, ignoring case, accents and punctuation", () => {
+    expect(isExitMessage("Sair", DEFAULT_FALLBACK_POLICY)).toBe(true);
+    expect(isExitMessage("  ATENDENTE! ", DEFAULT_FALLBACK_POLICY)).toBe(true);
+    expect(isExitMessage("falar com atendente", DEFAULT_FALLBACK_POLICY)).toBe(true);
+  });
+
+  it("does not fire on a sentence that only contains the word", () => {
+    expect(isExitMessage("vou sair de casa agora", DEFAULT_FALLBACK_POLICY)).toBe(false);
+    expect(isExitMessage("", DEFAULT_FALLBACK_POLICY)).toBe(false);
+  });
+
+  it("uses the flow's own list when set", () => {
+    const policy = resolveFallbackPolicy({ exit_keywords: ["cancelar"] });
+    expect(isExitMessage("Cancelar", policy)).toBe(true);
+    expect(isExitMessage("sair", policy)).toBe(false);
+  });
+});
 
 describe("decideFallback", () => {
   it("returns ignore when on_unknown_reply is 'ignore'", () => {

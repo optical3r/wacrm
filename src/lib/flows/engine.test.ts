@@ -228,6 +228,26 @@ describe("matchesKeywordTrigger", () => {
     expect(matchesKeywordTrigger("nothing to see here", cfg)).toBe(false);
   });
 
+  it("contains matches whole words only", () => {
+    const cfg = { keywords: ["oi"] };
+    expect(matchesKeywordTrigger("Oi, tudo bem?", cfg)).toBe(true);
+    expect(matchesKeywordTrigger("ola oi", cfg)).toBe(true);
+    expect(matchesKeywordTrigger("boa noite", cfg)).toBe(false);
+    expect(matchesKeywordTrigger("dois", cfg)).toBe(false);
+  });
+
+  it("ignores accents unless case_sensitive", () => {
+    expect(matchesKeywordTrigger("tenho uma duvida", { keywords: ["dúvida"] })).toBe(true);
+    expect(matchesKeywordTrigger("Tenho uma DÚVIDA", { keywords: ["duvida"] })).toBe(true);
+    expect(matchesKeywordTrigger("Ajuda", { keywords: ["ajuda"], match_type: "exact" })).toBe(true);
+  });
+
+  it("matches multi-word keywords as a phrase", () => {
+    const cfg = { keywords: ["falar com atendente"] };
+    expect(matchesKeywordTrigger("Quero falar com atendente!", cfg)).toBe(true);
+    expect(matchesKeywordTrigger("falar com o atendente", cfg)).toBe(false);
+  });
+
   it("skips empty strings in the keywords array", () => {
     const cfg = { keywords: ["", "support", ""] };
     expect(matchesKeywordTrigger("support center", cfg)).toBe(true);

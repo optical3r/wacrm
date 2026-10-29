@@ -39,7 +39,8 @@ import {
   engineSendMedia,
   engineSendText,
 } from "./meta-send";
-import { decideFallback, resolveFallbackPolicy } from "./fallback";
+import { decideFallback, isExitMessage, resolveFallbackPolicy } from "./fallback";
+import { foldKeywordText } from "./engine-match";
 import { addContactTagAndDispatch } from "@/lib/contacts/tag-events";
 import { removeContactTag } from "@/lib/contacts/tag-write";
 import {
@@ -89,10 +90,13 @@ export function matchReplyId(
   return null;
 }
 
+const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
 /**
- * Case-insensitive contains/exact match against a list of keywords.
- * Used by the trigger evaluator. Stable enough that the v3 builder
- * UI can preview matches by passing canned strings.
+ * Keyword match against a list of keywords. `contains` matches whole
+ * words only: "oi" fires on "oi, tudo bem?" but not on "boa noite".
+ * Case- and accent-insensitive by default. Stable enough that the v3
+ * builder UI can preview matches by passing canned strings.
  */
 export function matchesKeywordTrigger(
   text: string,
@@ -100,13 +104,17 @@ export function matchesKeywordTrigger(
 ): boolean {
   if (!text || !cfg.keywords?.length) return false;
   const matchType = cfg.match_type ?? "contains";
-  const haystack = cfg.case_sensitive ? text : text.toLowerCase();
+  const fold = (v: string) => (cfg.case_sensitive ? v : foldKeywordText(v));
+  const haystack = fold(text).trim();
   for (const raw of cfg.keywords) {
-    if (!raw) continue;
-    const needle = cfg.case_sensitive ? raw : raw.toLowerCase();
-    if (matchType === "exact" ? haystack === needle : haystack.includes(needle)) {
-      return true;
+    if (!raw || !raw.trim()) continue;
+    const needle = fold(raw).trim();
+    if (matchType === "exact") {
+      if (haystack === needle) return true;
+      continue;
     }
+    const word = new RegExp(`(^|[^\\p{L}\\p{N}])${escapeRegExp(needle)}($|[^\\p{L}\\p{N}])`, "u");
+    if (word.test(haystack)) return true;
   }
   return false;
 }
@@ -1010,6 +1018,20 @@ async function handleReplyForActiveRun(
     return { consumed: true, flow_run_id: run.id, outcome: "no_match" };
   }
 
+  // "sair" / "atendente" at any point: stop the bot, hand to a person.
+  const policy = resolveFallbackPolicy((await loadFlow(db, run.flow_id))?.fallback_policy);
+  if (message.kind === "text" && isExitMessage(message.text, policy)) {
+    if (run.conversation_id) {
+      await db
+        .from("conversations")
+        .update({ status: "pending", updated_at: new Date().toISOString() })
+        .eq("id", run.conversation_id);
+    }
+    await logEvent(db, run.id, "handoff", run.current_node_key, { reason: "exit_keyword" });
+    await endRun(db, run.id, "handed_off", "exit_keyword");
+    return { consumed: true, flow_run_id: run.id, outcome: "handed_off" };
+  }
+
   // Two ways a reply can advance:
   //   1. Interactive button/list tap on a send_buttons/send_list node.
   //   2. Text reply on a collect_input node — capture into vars.
@@ -1076,10 +1098,7 @@ async function handleReplyForActiveRun(
     };
   }
 
-  // No match → fallback. Apply the policy.
-  const policy = resolveFallbackPolicy(
-    (await loadFlow(db, run.flow_id))?.fallback_policy,
-  );
+  // No match → fallback. Apply the policy (loaded above).
   const newReprompts = run.reprompt_count + 1;
   await db
     .from("flow_runs")

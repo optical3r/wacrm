@@ -2497,6 +2497,8 @@
   "Validation": {
     "flows": {
       "nameRequired": "O nome do fluxo é obrigatório.",
+      "keywordTaken": "O fluxo \"{name}\" já está ativo com a palavra-chave \"{keyword}\". Remova a palavra de um dos dois para ativar.",
+      "firstInboundTaken": "O fluxo \"{name}\" já está ativo com o gatilho \"primeira mensagem\". Desative-o antes de ativar este.",
       "entryRequired": "Escolha um nó de entrada antes de ativar.",
       "needsNode": "Um fluxo precisa de pelo menos um nó antes da ativação.",
       "entryMissing": "O nó de entrada \"{id}\" não existe.",

@@ -25,6 +25,7 @@
 
 import { INTERACTIVE_LIMITS } from "@/lib/whatsapp/meta-api";
 import { getT } from "@/lib/i18n/translate";
+import { foldKeywordText } from "./engine-match";
 
 const t = getT("Validation.flows");
 
@@ -805,3 +806,46 @@ function outgoingEdges(node: NodeInput): string[] {
       return [];
   }
 }
+
+interface TriggerFlow {
+  name: string;
+  trigger_type: string;
+  trigger_config: Record<string, unknown>;
+}
+
+/**
+ * Other active flows of the account that would compete with this one
+ * for the same inbound message. The runner starts the oldest match and
+ * silently skips the rest, so activation refuses an overlap instead.
+ */
+export function findTriggerConflicts(flow: TriggerFlow, activeOthers: TriggerFlow[]): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const keywordsOf = (f: TriggerFlow) => {
+    const raw = (f.trigger_config as { keywords?: unknown }).keywords;
+    return Array.isArray(raw)
+      ? raw.filter((k): k is string => typeof k === "string" && k.trim() !== "").map((k) => foldKeywordText(k).trim())
+      : [];
+  };
+  if (flow.trigger_type === "first_inbound_message") {
+    const other = activeOthers.find((o) => o.trigger_type === "first_inbound_message");
+    if (other) {
+      issues.push({ severity: "error", scope: "trigger", message: t("firstInboundTaken", { name: other.name }) });
+    }
+  } else if (flow.trigger_type === "keyword") {
+    const mine = new Set(keywordsOf(flow));
+    for (const other of activeOthers) {
+      if (other.trigger_type !== "keyword") continue;
+      const shared = keywordsOf(other).filter((k) => mine.has(k));
+      if (shared.length) {
+        issues.push({
+          severity: "error",
+          scope: "trigger",
+          field: "keywords",
+          message: t("keywordTaken", { keyword: shared[0], name: other.name }),
+        });
+      }
+    }
+  }
+  return issues;
+}
+

@@ -2497,6 +2497,8 @@
   "Validation": {
     "flows": {
       "nameRequired": "Flow name is required.",
+      "keywordTaken": "The flow \"{name}\" is already active with the keyword \"{keyword}\". Remove it from one of the two to activate.",
+      "firstInboundTaken": "The flow \"{name}\" is already active with the \"first message\" trigger. Deactivate it before activating this one.",
       "entryRequired": "Pick an entry node before activating.",
       "needsNode": "A flow needs at least one node before activation.",
       "entryMissing": "Entry node \"{id}\" doesn't exist.",

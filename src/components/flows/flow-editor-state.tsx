@@ -383,7 +383,12 @@ export function FlowEditorProvider({
         });
         if (!res.ok) {
           const json = await res.json().catch(() => ({}));
-          throw new Error(json.error ?? t("statusUpdateFailedStatus", { status: res.status }));
+          // Server-only blockers (e.g. a keyword another active flow
+          // already uses) are not in the live validation panel: name them.
+          const firstIssue = (json.issues as Array<{ severity: string; message: string }> | undefined)?.find(
+            (i) => i.severity === "error",
+          );
+          throw new Error(firstIssue?.message ?? json.error ?? t("statusUpdateFailedStatus", { status: res.status }));
         }
         setStateRaw((s) => ({ ...s, status: next }));
         toast.success(

@@ -2497,6 +2497,8 @@
   "Validation": {
     "flows": {
       "nameRequired": "플로우 이름은 필수입니다.",
+      "keywordTaken": "\"{name}\" 플로우가 이미 키워드 \"{keyword}\"(으)로 활성화되어 있습니다. 활성화하려면 둘 중 하나에서 제거하세요.",
+      "firstInboundTaken": "\"{name}\" 플로우가 이미 \"첫 메시지\" 트리거로 활성화되어 있습니다. 이 플로우를 활성화하기 전에 비활성화하세요.",
       "entryRequired": "활성화하기 전에 시작 노드를 선택하세요.",
       "needsNode": "활성화하려면 플로우에 노드가 하나 이상 있어야 합니다.",
       "entryMissing": "시작 노드 \"{id}\"이(가) 존재하지 않습니다.",

@@ -15,6 +15,7 @@ import {
   DEFAULT_FALLBACK_POLICY,
   type FlowFallbackPolicy,
 } from "./types";
+import { foldKeywordText } from "./engine-match";
 
 export type FallbackAction =
   /** Re-send the same prompt and wait again. */
@@ -56,7 +57,24 @@ export function resolveFallbackPolicy(
       r.on_exhaust === "handoff" || r.on_exhaust === "end"
         ? r.on_exhaust
         : DEFAULT_FALLBACK_POLICY.on_exhaust,
+    exit_keywords: Array.isArray(r.exit_keywords)
+      ? r.exit_keywords.filter((k): k is string => typeof k === "string" && k.trim() !== "")
+      : DEFAULT_FALLBACK_POLICY.exit_keywords,
   };
+}
+
+/**
+ * True when the customer's whole message is one of the exit words
+ * ("sair", "atendente"…), ignoring case, accents and punctuation.
+ */
+export function isExitMessage(text: string, policy: FlowFallbackPolicy): boolean {
+  const clean = (v: string) =>
+    foldKeywordText(v)
+      .replace(/[^\p{L}\p{N}\s]/gu, " ")
+      .replace(/\s+/g, " ")
+      .trim();
+  const said = clean(text);
+  return said !== "" && policy.exit_keywords.some((k) => clean(k) === said);
 }
 
 /**

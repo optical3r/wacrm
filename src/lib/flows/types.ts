@@ -294,6 +294,11 @@ export interface FlowFallbackPolicy {
   on_timeout_hours: number;
   /** What to do once max_reprompts has been hit. */
   on_exhaust: "handoff" | "end";
+  /**
+   * Words that, sent on their own at any point, end the run and hand
+   * the conversation to a person. Compared case- and accent-insensitively.
+   */
+  exit_keywords: string[];
 }
 
 export const DEFAULT_FALLBACK_POLICY: FlowFallbackPolicy = {
@@ -301,6 +306,7 @@ export const DEFAULT_FALLBACK_POLICY: FlowFallbackPolicy = {
   max_reprompts: 2,
   on_timeout_hours: 24,
   on_exhaust: "handoff",
+  exit_keywords: ["sair", "parar", "atendente", "falar com atendente"],
 };
 
 // ============================================================

@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { validateFlowForActivation, reachableFromEntry } from "./validate";
+import { findTriggerConflicts, validateFlowForActivation, reachableFromEntry } from "./validate";
 
 const validFlow = {
   name: "Welcome",
@@ -545,5 +545,30 @@ describe("reachableFromEntry", () => {
     ];
     const set = reachableFromEntry("a", nodes);
     expect(set).toEqual(new Set(["a", "b"]));
+  });
+});
+
+describe("findTriggerConflicts", () => {
+  const kw = (name: string, keywords: string[]) => ({
+    name,
+    trigger_type: "keyword",
+    trigger_config: { keywords },
+  });
+
+  it("flags a keyword another active flow already uses, ignoring case and accents", () => {
+    const issues = findTriggerConflicts(kw("Novo", ["Dúvida", "preço"]), [kw("FAQ", ["duvida"])]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].severity).toBe("error");
+    expect(issues[0].scope).toBe("trigger");
+  });
+
+  it("allows different keywords", () => {
+    expect(findTriggerConflicts(kw("Novo", ["preço"]), [kw("FAQ", ["faq"])])).toEqual([]);
+  });
+
+  it("allows only one active first-message flow", () => {
+    const first = { name: "Boas-vindas", trigger_type: "first_inbound_message", trigger_config: {} };
+    expect(findTriggerConflicts({ ...first, name: "Outro" }, [first])).toHaveLength(1);
+    expect(findTriggerConflicts({ ...first, name: "Outro" }, [kw("FAQ", ["faq"])])).toEqual([]);
   });
 });
