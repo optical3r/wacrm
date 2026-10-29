@@ -58,6 +58,7 @@ import { AiThreadBanner } from "./ai-thread-banner";
 import { buildReplyPreview } from "./reply-quote";
 import { renderTemplateBody } from "@/lib/whatsapp/template-body";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
+import { STATUS_STYLES } from "./status-chip";
 import { toast } from "sonner";
 
 interface ReplyDraft {
@@ -136,10 +137,10 @@ function groupMessagesByDate(messages: Message[]) {
   return groups;
 }
 
-const STATUS_OPTIONS: { label: string; value: ConversationStatus; color: string }[] = [
-  { label: "Open", value: "open", color: "text-primary" },
-  { label: "Pending", value: "pending", color: "text-amber-400" },
-  { label: "Closed", value: "closed", color: "text-muted-foreground" },
+const STATUS_OPTIONS: { label: string; value: ConversationStatus }[] = [
+  { label: "Open", value: "open" },
+  { label: "Pending", value: "pending" },
+  { label: "Closed", value: "closed" },
 ];
 
 /**
@@ -1148,9 +1149,13 @@ export function MessageThread({
           {/* Status dropdown */}
           <DropdownMenu>
             <DropdownMenuTrigger className={cn(
-                  "inline-flex items-center justify-center h-7 gap-1 px-2 text-xs rounded-md hover:bg-muted",
-                  currentStatus?.color ?? "text-muted-foreground"
+                  "inline-flex items-center justify-center h-7 gap-1.5 px-2 text-xs font-semibold rounded-md hover:opacity-90",
+                  currentStatus ? STATUS_STYLES[currentStatus.value].chip : "text-muted-foreground hover:bg-muted"
                 )}>
+                {currentStatus && (() => {
+                  const Icon = STATUS_STYLES[currentStatus.value].icon;
+                  return <Icon className="h-3 w-3" strokeWidth={3} />;
+                })()}
                 {currentStatus ? t(`status${currentStatus.label}`) : t("status")}
                 <ChevronDown className="h-3 w-3" />
             </DropdownMenuTrigger>
@@ -1162,8 +1167,9 @@ export function MessageThread({
                 <DropdownMenuItem
                   key={opt.value}
                   onClick={() => handleStatusChange(opt.value)}
-                  className={cn("text-sm", opt.color)}
+                  className="gap-2 text-sm text-popover-foreground"
                 >
+                  <span className={cn("h-2 w-2 rounded-full", STATUS_STYLES[opt.value].dot)} />
                   {t(`status${opt.label}`)}
                 </DropdownMenuItem>
               ))}

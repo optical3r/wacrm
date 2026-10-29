@@ -12,6 +12,7 @@ import {
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
 import { Search, ChevronDown, X, Users } from "lucide-react";
+import { STATUS_STYLES, StatusChip } from "./status-chip";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
 import { Input } from "@/components/ui/input";
@@ -38,10 +39,10 @@ interface ConversationListProps {
   resyncToken?: number;
 }
 
-const STATUS_COLORS: Record<ConversationStatus, string> = {
-  open: "bg-primary",
-  pending: "bg-amber-500",
-  closed: "bg-muted-foreground",
+const STATUS_LABEL_KEYS: Record<ConversationStatus, "statusOpen" | "statusPending" | "statusClosed"> = {
+  open: "statusOpen",
+  pending: "statusPending",
+  closed: "statusClosed",
 };
 
 
@@ -182,18 +183,11 @@ export function ConversationList({
   }, [conversations]);
   const showGroupTabs = account?.plan === "starter" && (groupStats.count > 0 || kind === "groups");
 
-  const filtered = useMemo(() => {
+  // Everything but the status filter, so each filter button can show its count.
+  const base = useMemo(() => {
     let result = conversations.filter((c) =>
       kind === "groups" ? c.is_group && !c.contact?.group_hidden_at : !c.is_group
     );
-
-    if (filter === "unread") {
-      result = result.filter((c) => c.unread_count > 0);
-    } else if (filter === "mine") {
-      result = result.filter((c) => c.assigned_agent_id === user?.id);
-    } else if (filter !== "all") {
-      result = result.filter((c) => c.status === filter);
-    }
 
     // Contact-based filters (tags via OR logic, exact company match).
     if (selectedTagIds.length > 0 || selectedCompany !== null) {
@@ -220,7 +214,25 @@ export function ConversationList({
     }
 
     return result;
-  }, [conversations, kind, filter, search, selectedTagIds, selectedCompany, channelFilter, user?.id]);
+  }, [conversations, kind, search, selectedTagIds, selectedCompany, channelFilter]);
+
+  const matchesFilter = useCallback(
+    (c: Conversation, f: InboxFilter) => {
+      if (f === "all") return true;
+      if (f === "unread") return c.unread_count > 0;
+      if (f === "mine") return c.assigned_agent_id === user?.id;
+      return c.status === f;
+    },
+    [user?.id]
+  );
+
+  const filterCounts = useMemo(() => {
+    const counts = {} as Record<InboxFilter, number>;
+    for (const opt of FILTER_OPTIONS) counts[opt.value] = base.filter((c) => matchesFilter(c, opt.value)).length;
+    return counts;
+  }, [base, FILTER_OPTIONS, matchesFilter]);
+
+  const filtered = useMemo(() => base.filter((c) => matchesFilter(c, filter)), [base, filter, matchesFilter]);
 
   const toggleTag = useCallback((id: string) => {
     setSelectedTagIds((prev) =>
@@ -249,7 +261,6 @@ export function ConversationList({
     [onSelect]
   );
 
-  const activeFilter = FILTER_OPTIONS.find((o) => o.value === filter);
 
   return (
     // w-full on mobile so the list occupies the whole viewport when it's
@@ -291,33 +302,36 @@ export function ConversationList({
           />
         </div>
 
-        <div className="flex flex-wrap items-center gap-1">
-          <DropdownMenu>
-            <DropdownMenuTrigger className="inline-flex items-center justify-center h-7 gap-1 px-2 text-xs text-muted-foreground hover:text-foreground rounded-md hover:bg-muted">
-                {activeFilter?.label ?? t("filterAll")}
-                <ChevronDown className="h-3 w-3" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent
-              align="start"
-              className="border-border bg-popover"
-            >
-              {FILTER_OPTIONS.map((opt) => (
-                <DropdownMenuItem
-                  key={opt.value}
-                  onClick={() => setFilter(opt.value)}
-                  className={cn(
-                    "text-sm",
-                    filter === opt.value
-                      ? "text-primary"
-                      : "text-popover-foreground"
-                  )}
-                >
-                  {opt.label}
-                </DropdownMenuItem>
-              ))}
-            </DropdownMenuContent>
-          </DropdownMenu>
+        <div className="flex flex-wrap items-center gap-1" role="group" aria-label={t("filterByStatus")}>
+          {FILTER_OPTIONS.map((opt) => {
+            const dot =
+              opt.value === "unread"
+                ? "bg-primary"
+                : opt.value === "open" || opt.value === "pending" || opt.value === "closed"
+                  ? STATUS_STYLES[opt.value].dot
+                  : null;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                aria-pressed={filter === opt.value}
+                onClick={() => setFilter(opt.value)}
+                className={cn(
+                  "inline-flex h-6 items-center gap-1.5 rounded-full border px-2 text-[11px] transition-colors",
+                  filter === opt.value
+                    ? "border-foreground bg-foreground text-background"
+                    : "border-border text-muted-foreground hover:text-foreground"
+                )}
+              >
+                {dot && <span className={cn("h-1.5 w-1.5 rounded-full", dot)} />}
+                {opt.label}
+                <span className="font-semibold tabular-nums">{filterCounts[opt.value]}</span>
+              </button>
+            );
+          })}
+        </div>
 
+        <div className="flex flex-wrap items-center gap-1">
           {showNumberFilter && (
             <DropdownMenu>
               <DropdownMenuTrigger
@@ -531,6 +545,8 @@ function ConversationItem({
     ? contact?.name || t("unnamedGroup")
     : contact?.name || contact?.phone || t("unknown");
   const initials = displayName.charAt(0).toUpperCase();
+  const unread = conversation.unread_count > 0;
+  const closed = conversation.status === "closed";
 
   const handleClick = useCallback(() => {
     onSelect(conversation);
@@ -547,11 +563,11 @@ function ConversationItem({
       onClick={handleClick}
       className={cn(
         "flex w-full items-start gap-3 px-3 py-3 text-left transition-colors hover:bg-muted/50",
-        isActive && "border-l-2 border-primary bg-muted/70"
+        isActive && "border-l-2 border-foreground bg-muted/70"
       )}
     >
       {/* Avatar */}
-      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground">
+      <div className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-muted text-sm font-medium text-foreground", closed && "opacity-60")}>
         {contact?.avatar_url ? (
           <img
             src={contact.avatar_url}
@@ -568,31 +584,44 @@ function ConversationItem({
       {/* Content */}
       <div className="min-w-0 flex-1">
         <div className="flex items-center justify-between gap-2">
-          <span className="truncate text-sm font-medium text-foreground">
+          <span
+            className={cn(
+              "truncate text-sm text-foreground",
+              unread ? "font-bold" : "font-medium",
+              closed && "opacity-60"
+            )}
+          >
             {displayName}
           </span>
-          <span className="shrink-0 text-[10px] text-muted-foreground">{timeAgo}</span>
+          <span
+            className={cn(
+              "shrink-0 text-[10px] tabular-nums",
+              unread ? "font-semibold text-primary" : "text-muted-foreground"
+            )}
+          >
+            {timeAgo}
+          </span>
         </div>
         <div className="mt-0.5 flex items-center justify-between gap-2">
-          <p className="truncate text-xs text-muted-foreground">
+          <p
+            className={cn(
+              "truncate text-xs",
+              unread ? "font-medium text-foreground" : "text-muted-foreground"
+            )}
+          >
             {conversation.last_message_text || t("noMessagesYet")}
           </p>
           <div className="flex shrink-0 items-center gap-1.5">
-            {conversation.unread_count > 0 && (
+            <StatusChip status={conversation.status} label={t(STATUS_LABEL_KEYS[conversation.status])} />
+            {unread && (
               <span className="flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-bold text-primary-foreground">
                 {conversation.unread_count}
               </span>
             )}
-            <span
-              className={cn(
-                "h-2 w-2 rounded-full",
-                STATUS_COLORS[conversation.status]
-              )}
-              title={conversation.status}
-            />
           </div>
         </div>
       </div>
     </button>
   );
 }
+
