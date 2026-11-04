@@ -193,6 +193,8 @@ export function defaultConfigFor(type: NodeType): Record<string, unknown> {
       return { amount: 30, unit: "minutes", next_node_key: "" };
     case "http_fetch":
       return { url: "", method: "POST", body_template: "", headers_text: "", save_as: "resposta", next_node_key: "", error_next: "" };
+    case "go_to_flow":
+      return { flow_id: "" };
     case "handoff":
       return { note: "" };
     case "end":
@@ -221,6 +223,11 @@ export function applyNodePositions(
 // ============================================================
 
 const FlowEditorCtx = createContext<FlowEditorContextValue | null>(null);
+
+/** The editor context, or null outside the provider. */
+export function useOptionalFlowEditor(): FlowEditorContextValue | null {
+  return useContext(FlowEditorCtx);
+}
 
 export function useFlowEditor(): FlowEditorContextValue {
   const ctx = useContext(FlowEditorCtx);

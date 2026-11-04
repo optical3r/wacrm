@@ -708,6 +708,7 @@ const ADD_NODE_TYPES: NodeType[] = [
   'create_deal',
   'wait',
   'http_fetch',
+  'go_to_flow',
   'handoff',
   'end',
 ];

@@ -1416,7 +1416,12 @@
         "weekday3": "Qua",
         "weekday4": "Qui",
         "weekday5": "Sex",
-        "weekday6": "Sáb"
+        "weekday6": "Sáb",
+        "goToFlowLabel": "Fluxo de destino",
+        "goToFlowNone": "Escolha um fluxo",
+        "goToFlowInactiveName": "{name} (inativo)",
+        "goToFlowInactiveWarning": "Este fluxo está inativo. Ative-o, senão o cliente para aqui.",
+        "goToFlowHelp": "Este fluxo termina e o cliente segue do início do fluxo escolhido, com as mesmas respostas guardadas. Para um submenu que só deve abrir por aqui, use o gatilho Manual no fluxo de destino."
       },
       "categories": {
         "messaging": "Mensagens",
@@ -1475,6 +1480,10 @@
         "http_fetch": {
           "label": "Webhook",
           "blurb": "Chama um sistema externo e guarda a resposta"
+        },
+        "go_to_flow": {
+          "label": "Ir para outro fluxo",
+          "blurb": "Continua o atendimento no início de outro fluxo"
         }
       },
       "slotOk": "Deu certo",
@@ -1536,6 +1545,64 @@
       "save": "Salvar",
       "descriptionPlaceholder": "Adicione uma breve descrição (interna — os clientes não a veem)",
       "descriptionLabel": "Descrição do fluxo"
+    },
+    "simulator": {
+      "open": "Testar",
+      "title": "Testar fluxo",
+      "description": "Simula a conversa com o que está no editor, mesmo sem salvar. Nada é enviado no WhatsApp e nada é gravado.",
+      "placeholder": "Escreva como o cliente…",
+      "ended": "Fim do teste. Recomece para testar de novo.",
+      "send": "Enviar",
+      "restart": "Recomeçar",
+      "askCondition": "Condição por {subject}. Neste teste, o contato atende à condição?",
+      "askWebhook": "Webhook {url}: o teste não chama a URL. Qual resultado seguir?",
+      "subject": {
+        "var": "variável",
+        "tag": "etiqueta",
+        "contact_field": "campo do contato",
+        "business_hours": "horário"
+      },
+      "choice": {
+        "yes": "Sim",
+        "no": "Não",
+        "success": "Deu certo",
+        "error": "Deu erro"
+      },
+      "unit": {
+        "minutes": "min",
+        "hours": "h",
+        "days": "dias"
+      },
+      "field": {
+        "name": "Nome",
+        "email": "E-mail",
+        "company": "Empresa"
+      },
+      "media": {
+        "image": "Imagem",
+        "video": "Vídeo",
+        "document": "Documento"
+      },
+      "note": {
+        "tag_added": "Etiqueta adicionada ao contato",
+        "tag_removed": "Etiqueta removida do contato",
+        "deal_created": "Negócio criado no Pipeline: {title}",
+        "wait_skipped": "Espera de {amount} {unit} (pulada no teste)",
+        "webhook_skipped": "Webhook não chamado no teste: {url}",
+        "saved_to_contact": "Resposta salva no cadastro: {field}",
+        "condition_result": "Condição por {subject}: {result}",
+        "invalid_format": "Resposta no formato errado",
+        "reprompt": "O fluxo repete a pergunta",
+        "ignored": "Resposta ignorada, o fluxo continua esperando",
+        "exit_keyword": "Palavra de saída: o fluxo para e a conversa vai para um atendente",
+        "handoff": "Conversa transferida para um atendente",
+        "handoff_unknown": "Respostas fora do esperado: conversa transferida para um atendente",
+        "go_to_flow": "O cliente segue para outro fluxo (fim deste teste)",
+        "end": "Fim do fluxo",
+        "end_unknown": "Respostas fora do esperado: o fluxo termina",
+        "node_missing": "Bloco não encontrado: o fluxo para aqui",
+        "loop": "O fluxo entrou em repetição sem fim e parou"
+      }
     }
   },
   "Settings": {
@@ -2678,7 +2745,8 @@
       "waitInvalid": "A espera precisa ser de pelo menos 1 minuto e no máximo 30 dias.",
       "httpNeedsUrl": "O Webhook precisa de uma URL que comece com https://.",
       "nodeNeedsNext": "Este nó precisa apontar para um próximo nó.",
-      "nodeMissingNext": "Este nó aponta para um nó inexistente: \"{key}\"."
+      "nodeMissingNext": "Este nó aponta para um nó inexistente: \"{key}\".",
+      "goToFlowNeedsFlow": "Escolha o fluxo de destino."
     },
     "automations": {
       "needsStep": "automações ativas precisam de pelo menos uma etapa",

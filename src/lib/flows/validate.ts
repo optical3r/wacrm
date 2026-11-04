@@ -849,6 +849,20 @@ function validateNode(
       break;
     }
 
+    case "go_to_flow": {
+      const cfg = node.config as { flow_id?: string };
+      if (!cfg.flow_id) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "flow_id",
+          message: t("goToFlowNeedsFlow"),
+        });
+      }
+      break;
+    }
+
     case "handoff":
     case "end":
       // Terminal nodes have no outgoing edges; nothing to validate
@@ -940,6 +954,7 @@ export function outgoingEdges(node: NodeInput): string[] {
       return out;
     }
     case "handoff":
+    case "go_to_flow":
     case "end":
     default:
       return [];

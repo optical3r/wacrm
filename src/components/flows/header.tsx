@@ -42,6 +42,7 @@ import {
   useFlowEditor,
   type BuilderState,
 } from "./flow-editor-state";
+import { FlowSimulatorButton } from "./flow-simulator";
 
 export function EditorHeader() {
   const router = useRouter();
@@ -97,6 +98,7 @@ export function EditorHeader() {
 
         {/* ---- right: runs · delete · activate · save ---- */}
         <div className="ml-auto flex flex-wrap items-center gap-1.5">
+          <FlowSimulatorButton />
           <Button
             variant="ghost"
             size="sm"

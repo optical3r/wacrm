@@ -659,6 +659,7 @@ function AddNodeButton({ onAdd, t }: { onAdd: (type: NodeType) => void; t: Retur
     'create_deal',
     'wait',
     'http_fetch',
+    'go_to_flow',
     'handoff',
     'end',
   ];

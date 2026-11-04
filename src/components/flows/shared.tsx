@@ -20,6 +20,7 @@ import {
   Briefcase,
   Flag,
   Globe,
+  Shuffle,
   Hourglass,
   GitFork,
   Inbox,
@@ -55,6 +56,7 @@ export type NodeType =
   | 'create_deal'
   | 'wait'
   | 'http_fetch'
+  | 'go_to_flow'
   | 'handoff'
   | 'end';
 
@@ -169,6 +171,12 @@ export const NODE_META: Record<
     color: 'text-orange-400',
     category: 'logic',
   },
+  go_to_flow: {
+    slugSeed: 'Go to flow',
+    icon: Shuffle,
+    color: 'text-cyan-400',
+    category: 'flow',
+  },
   handoff: {
     slugSeed: 'Handoff to agent',
     icon: UserPlus,
@@ -222,6 +230,7 @@ const NODE_HUE: Record<NodeType, { l: number; c: number; h: number }> = {
   create_deal: { l: 0.66, c: 0.15, h: 135 }, // green — money in the pipeline
   wait: { l: 0.6, c: 0.05, h: 240 }, // slate — time passing
   http_fetch: { l: 0.68, c: 0.15, h: 45 }, // orange — talks to the outside
+  go_to_flow: { l: 0.66, c: 0.12, h: 200 }, // cyan — jumps elsewhere
   handoff: { l: 0.65, c: 0.17, h: 16 }, // rose — hands off
   end: { l: 0.55, c: 0.01, h: 260 }, // neutral grey — terminal
 };
@@ -455,6 +464,9 @@ export function summarizeNode(
       const method = cfg.method === 'GET' ? 'GET' : 'POST';
       return url ? `${method} ${truncate(url, 50)}` : null;
     }
+    case 'go_to_flow':
+      // The flow's name needs a lookup; the form shows it.
+      return null;
     case 'handoff': {
       const note = typeof cfg.note === 'string' ? cfg.note : '';
       return note.length > 0 ? truncate(note) : null;

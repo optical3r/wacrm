@@ -1416,7 +1416,12 @@
         "weekday3": "Mié",
         "weekday4": "Jue",
         "weekday5": "Vie",
-        "weekday6": "Sáb"
+        "weekday6": "Sáb",
+        "goToFlowLabel": "Flujo de destino",
+        "goToFlowNone": "Elige un flujo",
+        "goToFlowInactiveName": "{name} (inactivo)",
+        "goToFlowInactiveWarning": "Este flujo está inactivo. Actívalo o el cliente se detiene aquí.",
+        "goToFlowHelp": "Este flujo termina y el cliente sigue desde el inicio del flujo elegido, con las mismas respuestas guardadas. Para un submenú que solo debe abrirse desde aquí, usa el disparador Manual en el flujo de destino."
       },
       "categories": {
         "messaging": "Mensajería",
@@ -1475,6 +1480,10 @@
         "http_fetch": {
           "label": "Webhook",
           "blurb": "Llama a un sistema externo y guarda la respuesta"
+        },
+        "go_to_flow": {
+          "label": "Ir a otro flujo",
+          "blurb": "Continúa la atención al inicio de otro flujo"
         }
       },
       "slotOk": "Éxito",
@@ -1536,6 +1545,64 @@
       "save": "Guardar",
       "descriptionPlaceholder": "Agrega una breve descripción (interna; los clientes no la ven)",
       "descriptionLabel": "Descripción del flujo"
+    },
+    "simulator": {
+      "open": "Probar",
+      "title": "Probar flujo",
+      "description": "Simula la conversación con lo que está en el editor, aunque no esté guardado. No se envía nada por WhatsApp ni se guarda nada.",
+      "placeholder": "Escribe como el cliente…",
+      "ended": "Fin de la prueba. Reinicia para probar de nuevo.",
+      "send": "Enviar",
+      "restart": "Reiniciar",
+      "askCondition": "Condición por {subject}. En esta prueba, ¿el contacto la cumple?",
+      "askWebhook": "Webhook {url}: la prueba no llama a la URL. ¿Qué resultado seguir?",
+      "subject": {
+        "var": "variable",
+        "tag": "etiqueta",
+        "contact_field": "campo del contacto",
+        "business_hours": "horario"
+      },
+      "choice": {
+        "yes": "Sí",
+        "no": "No",
+        "success": "Salió bien",
+        "error": "Falló"
+      },
+      "unit": {
+        "minutes": "min",
+        "hours": "h",
+        "days": "días"
+      },
+      "field": {
+        "name": "Nombre",
+        "email": "Correo",
+        "company": "Empresa"
+      },
+      "media": {
+        "image": "Imagen",
+        "video": "Video",
+        "document": "Documento"
+      },
+      "note": {
+        "tag_added": "Etiqueta agregada al contacto",
+        "tag_removed": "Etiqueta quitada del contacto",
+        "deal_created": "Negocio creado en el Pipeline: {title}",
+        "wait_skipped": "Espera de {amount} {unit} (omitida en la prueba)",
+        "webhook_skipped": "Webhook no llamado en la prueba: {url}",
+        "saved_to_contact": "Respuesta guardada en el contacto: {field}",
+        "condition_result": "Condición por {subject}: {result}",
+        "invalid_format": "Respuesta con formato incorrecto",
+        "reprompt": "El flujo repite la pregunta",
+        "ignored": "Respuesta ignorada, el flujo sigue esperando",
+        "exit_keyword": "Palabra de salida: el flujo se detiene y la conversación pasa a un agente",
+        "handoff": "Conversación transferida a un agente",
+        "handoff_unknown": "Respuestas inesperadas: conversación transferida a un agente",
+        "go_to_flow": "El cliente pasa a otro flujo (fin de esta prueba)",
+        "end": "Fin del flujo",
+        "end_unknown": "Respuestas inesperadas: el flujo termina",
+        "node_missing": "Bloque no encontrado: el flujo se detiene aquí",
+        "loop": "El flujo entró en un bucle sin fin y se detuvo"
+      }
     }
   },
   "Settings": {
@@ -2678,7 +2745,8 @@
       "waitInvalid": "La espera debe ser de al menos 1 minuto y como máximo 30 días.",
       "httpNeedsUrl": "El Webhook necesita una URL que empiece por https://.",
       "nodeNeedsNext": "Este nodo debe apuntar a un siguiente nodo.",
-      "nodeMissingNext": "Este nodo apunta a un nodo inexistente: \"{key}\"."
+      "nodeMissingNext": "Este nodo apunta a un nodo inexistente: \"{key}\".",
+      "goToFlowNeedsFlow": "Elige el flujo de destino."
     },
     "automations": {
       "needsStep": "las automatizaciones activas necesitan al menos un paso",

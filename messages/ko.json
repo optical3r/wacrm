@@ -1416,7 +1416,12 @@
         "weekday3": "수",
         "weekday4": "목",
         "weekday5": "금",
-        "weekday6": "토"
+        "weekday6": "토",
+        "goToFlowLabel": "대상 플로우",
+        "goToFlowNone": "플로우 선택",
+        "goToFlowInactiveName": "{name} (비활성)",
+        "goToFlowInactiveWarning": "이 플로우는 비활성 상태입니다. 활성화하지 않으면 고객은 여기서 멈춥니다.",
+        "goToFlowHelp": "이 플로우가 끝나고 고객은 저장된 답변을 그대로 가지고 선택한 플로우의 시작 지점에서 이어갑니다. 여기서만 열려야 하는 하위 메뉴라면 대상 플로우에 수동 트리거를 사용하세요."
       },
       "categories": {
         "messaging": "메시징",
@@ -1475,6 +1480,10 @@
         "http_fetch": {
           "label": "웹훅",
           "blurb": "외부 시스템을 호출하고 응답을 저장합니다"
+        },
+        "go_to_flow": {
+          "label": "다른 플로우로 이동",
+          "blurb": "다른 플로우의 시작 지점에서 이어갑니다"
         }
       },
       "slotOk": "성공",
@@ -1536,6 +1545,64 @@
       "save": "저장",
       "descriptionPlaceholder": "짧은 설명을 추가하세요 (내부용 — 고객에게는 보이지 않습니다)",
       "descriptionLabel": "플로우 설명"
+    },
+    "simulator": {
+      "open": "테스트",
+      "title": "플로우 테스트",
+      "description": "저장하지 않았더라도 편집기 내용으로 대화를 재현합니다. WhatsApp으로 아무것도 보내지 않으며 저장도 하지 않습니다.",
+      "placeholder": "고객처럼 입력하세요…",
+      "ended": "테스트가 끝났습니다. 다시 시작해 보세요.",
+      "send": "보내기",
+      "restart": "다시 시작",
+      "askCondition": "{subject} 조건입니다. 이 테스트에서 연락처가 조건을 충족하나요?",
+      "askWebhook": "웹훅 {url}: 테스트에서는 URL을 호출하지 않습니다. 어떤 결과로 진행할까요?",
+      "subject": {
+        "var": "변수",
+        "tag": "태그",
+        "contact_field": "연락처 필드",
+        "business_hours": "영업시간"
+      },
+      "choice": {
+        "yes": "예",
+        "no": "아니요",
+        "success": "성공",
+        "error": "실패"
+      },
+      "unit": {
+        "minutes": "분",
+        "hours": "시간",
+        "days": "일"
+      },
+      "field": {
+        "name": "이름",
+        "email": "이메일",
+        "company": "회사"
+      },
+      "media": {
+        "image": "이미지",
+        "video": "동영상",
+        "document": "문서"
+      },
+      "note": {
+        "tag_added": "연락처에 태그 추가",
+        "tag_removed": "연락처에서 태그 제거",
+        "deal_created": "파이프라인에 거래 생성: {title}",
+        "wait_skipped": "{amount}{unit} 대기 (테스트에서는 건너뜀)",
+        "webhook_skipped": "테스트에서 웹훅을 호출하지 않음: {url}",
+        "saved_to_contact": "연락처에 답변 저장: {field}",
+        "condition_result": "{subject} 조건: {result}",
+        "invalid_format": "형식이 맞지 않는 답변",
+        "reprompt": "플로우가 다시 질문합니다",
+        "ignored": "답변을 무시하고 계속 기다립니다",
+        "exit_keyword": "종료 단어: 플로우가 멈추고 상담원에게 넘어갑니다",
+        "handoff": "상담원에게 대화 전달",
+        "handoff_unknown": "예상치 못한 답변: 상담원에게 대화 전달",
+        "go_to_flow": "고객이 다른 플로우로 이동합니다 (테스트 종료)",
+        "end": "플로우 종료",
+        "end_unknown": "예상치 못한 답변: 플로우 종료",
+        "node_missing": "블록을 찾을 수 없어 여기서 멈춥니다",
+        "loop": "플로우가 끝없이 반복되어 멈췄습니다"
+      }
     }
   },
   "Settings": {
@@ -2678,7 +2745,8 @@
       "waitInvalid": "대기 시간은 최소 1분, 최대 30일이어야 합니다.",
       "httpNeedsUrl": "웹훅에는 https://로 시작하는 URL이 필요합니다.",
       "nodeNeedsNext": "이 노드는 다음 노드를 가리켜야 합니다.",
-      "nodeMissingNext": "이 노드가 존재하지 않는 노드를 가리킵니다: \"{key}\"."
+      "nodeMissingNext": "이 노드가 존재하지 않는 노드를 가리킵니다: \"{key}\".",
+      "goToFlowNeedsFlow": "대상 플로우를 선택하세요."
     },
     "automations": {
       "needsStep": "활성 자동화에는 단계가 하나 이상 필요합니다",

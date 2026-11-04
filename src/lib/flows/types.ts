@@ -224,6 +224,15 @@ export interface HttpFetchNodeConfig {
 }
 
 /**
+ * Ends this run and starts `flow_id` (another active flow of the same
+ * account) for the contact, at its entry node, keeping the vars. Lets
+ * flows share menus. Terminal for this flow.
+ */
+export interface GoToFlowNodeConfig {
+  flow_id: string;
+}
+
+/**
  * Total union — every concrete node_type the v1 engine understands.
  * Add new node types here and the engine's switch will flag missing
  * cases via TypeScript's exhaustiveness check.
@@ -243,6 +252,7 @@ export type FlowNodeConfig =
   | { node_type: "create_deal"; config: CreateDealNodeConfig }
   | { node_type: "wait"; config: WaitNodeConfig }
   | { node_type: "http_fetch"; config: HttpFetchNodeConfig }
+  | { node_type: "go_to_flow"; config: GoToFlowNodeConfig }
   | { node_type: "handoff"; config: HandoffNodeConfig }
   | { node_type: "end"; config: EndNodeConfig };
 

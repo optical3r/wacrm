@@ -50,6 +50,7 @@ import { createClient } from "@/lib/supabase/client";
 import { uploadAccountMedia, MEDIA_MAX_BYTES } from "@/lib/storage/upload-media";
 import { slugify, type BuilderNode } from "../shared";
 import { NextNodeRow, NodeKeySelect, TextRow } from "./fields";
+import { useOptionalFlowEditor } from "../flow-editor-state";
 
 interface NodeConfigFormProps {
   node: BuilderNode;
@@ -230,6 +231,15 @@ export function NodeConfigForm({
           cfg={cfg as HttpFetchCfg}
           allNodes={allNodes}
           currentKey={node.node_key}
+          onUpdateConfig={onUpdateConfig}
+          t={t}
+        />
+      );
+
+    case "go_to_flow":
+      return (
+        <GoToFlowForm
+          cfg={cfg as { flow_id?: string }}
           onUpdateConfig={onUpdateConfig}
           t={t}
         />
@@ -1051,6 +1061,68 @@ function HttpFetchForm({
           label={t("httpOnError")}
         />
       </div>
+    </>
+  );
+}
+
+// ============================================================
+// go_to_flow — carry on in another flow
+// ============================================================
+
+const NO_FLOW = "__none__";
+
+function GoToFlowForm({
+  cfg,
+  onUpdateConfig,
+  t,
+}: {
+  cfg: { flow_id?: string };
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const editor = useOptionalFlowEditor();
+  const currentFlowId = editor?.flow.id ?? null;
+  const [flows, setFlows] = useState<Array<{ id: string; name: string; status: string }>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    createClient()
+      .from("flows")
+      .select("id, name, status")
+      .order("name")
+      .then(({ data }) => {
+        if (!cancelled && data) setFlows(data as Array<{ id: string; name: string; status: string }>);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  const others = flows.filter((f) => f.id !== currentFlowId);
+  const picked = others.find((f) => f.id === cfg.flow_id);
+  return (
+    <>
+      <div>
+        <label className="mb-1 block text-xs text-muted-foreground">{t("goToFlowLabel")}</label>
+        <Select
+          value={cfg.flow_id || NO_FLOW}
+          onValueChange={(v) => onUpdateConfig({ flow_id: v === NO_FLOW ? "" : v })}
+        >
+          <SelectTrigger className="bg-muted">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_FLOW}>{t("goToFlowNone")}</SelectItem>
+            {others.map((f) => (
+              <SelectItem key={f.id} value={f.id}>
+                {f.status === "active" ? f.name : t("goToFlowInactiveName", { name: f.name })}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      {picked && picked.status !== "active" && (
+        <p className="text-[10px] text-amber-500">{t("goToFlowInactiveWarning")}</p>
+      )}
+      <p className="text-[10px] text-muted-foreground">{t("goToFlowHelp")}</p>
     </>
   );
 }

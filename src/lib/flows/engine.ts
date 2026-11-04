@@ -60,6 +60,7 @@ import {
   type DispatchInboundInput,
   type DispatchInboundResult,
   type EndNodeConfig,
+  type GoToFlowNodeConfig,
   type HttpFetchNodeConfig,
   type WaitNodeConfig,
   type FlowNodeRow,
@@ -180,7 +181,7 @@ export function isSuspending(node_type: string): boolean {
 
 /** Nodes that end the run. */
 export function isTerminal(node_type: string): boolean {
-  return node_type === "handoff" || node_type === "end";
+  return node_type === "handoff" || node_type === "end" || node_type === "go_to_flow";
 }
 
 /**
@@ -975,6 +976,9 @@ async function advanceFromNodeKey(
       await executeHandoff(db, run, node);
       return { outcome: "handed_off" };
     }
+    if (node.node_type === "go_to_flow") {
+      return goToFlow(db, run, node);
+    }
     if (node.node_type === "end") {
       const endCfg = (node.config ?? {}) as EndNodeConfig;
       if (endCfg.close_conversation && run.conversation_id) {
@@ -1003,6 +1007,85 @@ async function advanceFromNodeKey(
   });
   await endRun(db, run.id, "failed", "advance_loop_overflow");
   return { outcome: "completed" };
+}
+
+/** How many flows one conversation may chain through in a row. */
+export const MAX_FLOW_HOPS = 5;
+const HOPS_VAR = "_flow_hops";
+
+/** Why a jump to `target` is refused, or null when it may go ahead. */
+export function goToFlowRefusal(
+  target: Pick<FlowRow, "id" | "account_id" | "status" | "entry_node_id"> | null,
+  run: Pick<FlowRunRow, "flow_id" | "account_id">,
+  hops: number,
+): string | null {
+  if (!target || target.account_id !== run.account_id) return "go_to_flow_not_found";
+  if (target.id === run.flow_id) return "go_to_flow_same_flow";
+  if (target.status !== "active" || !target.entry_node_id) return "go_to_flow_inactive";
+  if (hops >= MAX_FLOW_HOPS) return "go_to_flow_loop";
+  return null;
+}
+
+/**
+ * The "Ir para outro fluxo" block: this run ends, and a new run of the
+ * target flow starts at its entry node with the same vars. The target
+ * must be another active flow of the same account. A chain longer than
+ * MAX_FLOW_HOPS (a loop between flows) fails instead of going on.
+ */
+async function goToFlow(
+  db: AdminClient,
+  run: FlowRunRow,
+  node: FlowNodeRow,
+): Promise<{ outcome: "advanced" | "completed" | "handed_off" }> {
+  const cfg = (node.config ?? {}) as Partial<GoToFlowNodeConfig>;
+  const hops = Number((run.vars ?? {})[HOPS_VAR]) || 0;
+  const target = cfg.flow_id ? await loadFlow(db, cfg.flow_id) : null;
+  const reason = goToFlowRefusal(target, run, hops);
+  if (reason || !target) {
+    await logEvent(db, run.id, "error", node.node_key, {
+      reason,
+      flow_id: cfg.flow_id ?? null,
+    });
+    await endRun(db, run.id, "failed", reason ?? "go_to_flow_not_found");
+    return { outcome: "completed" };
+  }
+
+  await logEvent(db, run.id, "completed", node.node_key, { go_to_flow: target.id });
+  await endRun(db, run.id, "completed", "go_to_flow");
+
+  const vars = { ...(run.vars ?? {}), [HOPS_VAR]: hops + 1 };
+  const { data: inserted, error } = await db
+    .from("flow_runs")
+    .insert({
+      flow_id: target.id,
+      account_id: target.account_id,
+      user_id: target.user_id,
+      contact_id: run.contact_id,
+      conversation_id: run.conversation_id,
+      status: "active",
+      current_node_key: target.entry_node_id,
+      vars,
+    })
+    .select("*")
+    .maybeSingle();
+  if (error || !inserted) {
+    console.error("[flows] go_to_flow insert error:", error?.message ?? "no row");
+    return { outcome: "completed" };
+  }
+  const next = inserted as FlowRunRow;
+  await logEvent(db, next.id, "started", target.entry_node_id, {
+    flow_id: target.id,
+    trigger_type: "go_to_flow",
+    from_flow_id: run.flow_id,
+    from_run_id: run.id,
+  });
+  const { error: incErr } = await db.rpc("increment_flow_execution_count", {
+    p_flow_id: target.id,
+  });
+  if (incErr) console.error("[flows] execution_count rpc error:", incErr.message);
+
+  const nodes = await loadAllNodes(db, target.id);
+  return advanceFromNodeKey(db, next, target.entry_node_id!, nodes);
 }
 
 /**

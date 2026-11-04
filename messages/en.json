@@ -1416,7 +1416,12 @@
         "weekday3": "Wed",
         "weekday4": "Thu",
         "weekday5": "Fri",
-        "weekday6": "Sat"
+        "weekday6": "Sat",
+        "goToFlowLabel": "Target flow",
+        "goToFlowNone": "Pick a flow",
+        "goToFlowInactiveName": "{name} (inactive)",
+        "goToFlowInactiveWarning": "This flow is inactive. Activate it, or the customer stops here.",
+        "goToFlowHelp": "This flow ends and the customer carries on from the start of the chosen flow, with the same saved answers. For a submenu that should only open from here, give the target flow the Manual trigger."
       },
       "categories": {
         "messaging": "Messaging",
@@ -1475,6 +1480,10 @@
         "http_fetch": {
           "label": "Webhook",
           "blurb": "Calls an external system and keeps the answer"
+        },
+        "go_to_flow": {
+          "label": "Go to another flow",
+          "blurb": "Carries on at the start of another flow"
         }
       },
       "slotOk": "Success",
@@ -1536,6 +1545,64 @@
       "save": "Save",
       "descriptionPlaceholder": "Add a short description (internal — customers don't see this)",
       "descriptionLabel": "Flow description"
+    },
+    "simulator": {
+      "open": "Test",
+      "title": "Test flow",
+      "description": "Plays the conversation with what is in the editor, even unsaved. Nothing is sent on WhatsApp and nothing is saved.",
+      "placeholder": "Type as the customer…",
+      "ended": "Test over. Restart to try again.",
+      "send": "Send",
+      "restart": "Restart",
+      "askCondition": "Condition on {subject}. In this test, does the contact meet it?",
+      "askWebhook": "Webhook {url}: the test does not call the URL. Which result should it follow?",
+      "subject": {
+        "var": "variable",
+        "tag": "tag",
+        "contact_field": "contact field",
+        "business_hours": "hours"
+      },
+      "choice": {
+        "yes": "Yes",
+        "no": "No",
+        "success": "Succeeded",
+        "error": "Failed"
+      },
+      "unit": {
+        "minutes": "min",
+        "hours": "h",
+        "days": "days"
+      },
+      "field": {
+        "name": "Name",
+        "email": "Email",
+        "company": "Company"
+      },
+      "media": {
+        "image": "Image",
+        "video": "Video",
+        "document": "Document"
+      },
+      "note": {
+        "tag_added": "Tag added to the contact",
+        "tag_removed": "Tag removed from the contact",
+        "deal_created": "Deal created in the Pipeline: {title}",
+        "wait_skipped": "Wait of {amount} {unit} (skipped in the test)",
+        "webhook_skipped": "Webhook not called in the test: {url}",
+        "saved_to_contact": "Answer saved to the contact: {field}",
+        "condition_result": "Condition on {subject}: {result}",
+        "invalid_format": "Answer in the wrong format",
+        "reprompt": "The flow asks again",
+        "ignored": "Answer ignored, the flow keeps waiting",
+        "exit_keyword": "Exit word: the flow stops and the chat goes to an agent",
+        "handoff": "Chat handed to an agent",
+        "handoff_unknown": "Unexpected answers: chat handed to an agent",
+        "go_to_flow": "The customer moves to another flow (end of this test)",
+        "end": "End of the flow",
+        "end_unknown": "Unexpected answers: the flow ends",
+        "node_missing": "Block not found: the flow stops here",
+        "loop": "The flow looped endlessly and stopped"
+      }
     }
   },
   "Settings": {
@@ -2678,7 +2745,8 @@
       "waitInvalid": "The wait must be at least 1 minute and at most 30 days.",
       "httpNeedsUrl": "The Webhook needs a URL starting with https://.",
       "nodeNeedsNext": "This node must point to a next node.",
-      "nodeMissingNext": "This node points to a missing node: \"{key}\"."
+      "nodeMissingNext": "This node points to a missing node: \"{key}\".",
+      "goToFlowNeedsFlow": "Pick the target flow."
     },
     "automations": {
       "needsStep": "active automations need at least one step",
