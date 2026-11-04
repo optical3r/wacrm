@@ -192,6 +192,17 @@ export function NodeConfigForm({
         />
       );
 
+    case "router":
+      return (
+        <RouterForm
+          cfg={cfg as RouterCfg}
+          allNodes={allNodes}
+          currentKey={node.node_key}
+          onUpdateConfig={onUpdateConfig}
+          t={t}
+        />
+      );
+
     case "set_tag":
       return (
         <SetTagForm
@@ -648,21 +659,241 @@ function SendListForm({
 // condition
 // ============================================================
 
-interface ConditionCfg {
+interface RuleCfg {
   subject?: "var" | "tag" | "contact_field" | "business_hours";
   subject_key?: string;
-  operator?: "equals" | "contains" | "present" | "absent";
+  operator?: "equals" | "contains" | "present" | "absent" | "gt" | "gte" | "lt" | "lte";
   value?: string;
   days?: number[];
   timezone?: string;
+}
+
+interface ConditionCfg extends RuleCfg {
+  extra_rules?: RuleCfg[];
+  match?: "all" | "any";
   true_next?: string;
   false_next?: string;
 }
+
+interface RouteCfg {
+  id: string;
+  label?: string;
+  match?: "all" | "any";
+  rules?: RuleCfg[];
+  next_node_key?: string;
+}
+
+interface RouterCfg {
+  routes?: RouteCfg[];
+  else_next?: string;
+}
+
+const NEW_RULE: RuleCfg = { subject: "var", subject_key: "", operator: "equals", value: "" };
+const MAX_ROUTES = 10;
 
 interface UserTag {
   id: string;
   name: string;
   color?: string;
+}
+
+/** The fields of one rule: what to test, how, and against what. */
+function RuleFields({
+  rule,
+  onChange,
+  tags,
+  t,
+}: {
+  rule: RuleCfg;
+  onChange: (patch: Record<string, unknown>) => void;
+  tags: UserTag[];
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const subject = rule.subject ?? "var";
+  const operator = rule.operator ?? "equals";
+  const showValue = operator !== "present" && operator !== "absent";
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">{t("ifLabel")}</label>
+          <Select
+            value={subject}
+            onValueChange={(v) =>
+              onChange(
+                v === "business_hours"
+                  ? {
+                      subject: v,
+                      subject_key: "",
+                      operator: "present",
+                      value: rule.value && /^\d/.test(rule.value) ? rule.value : "08:00-18:00",
+                      days: rule.days ?? [1, 2, 3, 4, 5],
+                      timezone: rule.timezone ?? "America/Sao_Paulo",
+                    }
+                  : { subject: v as RuleCfg["subject"] },
+              )
+            }
+          >
+            <SelectTrigger className="bg-muted">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="var">{t("capturedVariable")}</SelectItem>
+              <SelectItem value="tag">{t("contactHasTag")}</SelectItem>
+              <SelectItem value="contact_field">{t("contactField")}</SelectItem>
+              <SelectItem value="business_hours">{t("businessHours")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        {subject === "business_hours" ? (
+          <BusinessHoursFields cfg={rule} onUpdateConfig={onChange} t={t} />
+        ) : (
+          <div className="md:col-span-2">
+            <label className="mb-1 block text-xs text-muted-foreground">
+              {subject === "var" ? t("varName") : subject === "tag" ? t("tagLabel") : t("fieldLabel")}
+            </label>
+            {subject === "tag" && tags.length > 0 ? (
+              <Select value={rule.subject_key ?? ""} onValueChange={(v) => onChange({ subject_key: v })}>
+                <SelectTrigger className="bg-muted">
+                  <SelectValue placeholder={t("pickTag")} />
+                </SelectTrigger>
+                <SelectContent>
+                  {tags.map((tag) => (
+                    <SelectItem key={tag.id} value={tag.id}>
+                      {tag.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : subject === "contact_field" ? (
+              <Select value={rule.subject_key ?? ""} onValueChange={(v) => onChange({ subject_key: v })}>
+                <SelectTrigger className="bg-muted">
+                  <SelectValue placeholder={t("pickField")} />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="name">name</SelectItem>
+                  <SelectItem value="email">email</SelectItem>
+                  <SelectItem value="phone">phone</SelectItem>
+                  <SelectItem value="company">company</SelectItem>
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                value={rule.subject_key ?? ""}
+                onChange={(e) => onChange({ subject_key: e.target.value })}
+                placeholder={subject === "var" ? t("varKeyPlaceholder") : t("tagUuidPlaceholder")}
+                className="bg-muted font-mono text-xs"
+              />
+            )}
+          </div>
+        )}
+      </div>
+
+      {subject !== "business_hours" && (
+        <div className={cn("grid grid-cols-1 gap-3", showValue ? "md:grid-cols-2" : "")}>
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">{t("operatorLabel")}</label>
+            <Select value={operator} onValueChange={(v) => onChange({ operator: v as RuleCfg["operator"] })}>
+              <SelectTrigger className="bg-muted">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="present">{t("isPresent")}</SelectItem>
+                <SelectItem value="absent">{t("isAbsent")}</SelectItem>
+                <SelectItem value="equals">{t("equals")}</SelectItem>
+                <SelectItem value="contains">{t("contains")}</SelectItem>
+                <SelectItem value="gt">{t("greaterThan")}</SelectItem>
+                <SelectItem value="gte">{t("greaterOrEqual")}</SelectItem>
+                <SelectItem value="lt">{t("lessThan")}</SelectItem>
+                <SelectItem value="lte">{t("lessOrEqual")}</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {showValue && (
+            <div>
+              <label className="mb-1 block text-xs text-muted-foreground">{t("valueLabel")}</label>
+              <Input
+                value={rule.value ?? ""}
+                onChange={(e) => onChange({ value: e.target.value })}
+                inputMode={["gt", "gte", "lt", "lte"].includes(operator) ? "decimal" : undefined}
+                className="bg-muted"
+              />
+            </div>
+          )}
+        </div>
+      )}
+    </>
+  );
+}
+
+/** "Todas as regras (e)" / "Qualquer regra (ou)". */
+function MatchSelect({
+  value,
+  onChange,
+  t,
+}: {
+  value: "all" | "any";
+  onChange: (v: "all" | "any") => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  return (
+    <Select value={value} onValueChange={(v) => onChange(v === "any" ? "any" : "all")}>
+      <SelectTrigger className="h-8 bg-muted text-xs">
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value="all">{t("matchAll")}</SelectItem>
+        <SelectItem value="any">{t("matchAny")}</SelectItem>
+      </SelectContent>
+    </Select>
+  );
+}
+
+/** Extra rules in a bordered box each, with remove and add. */
+function RuleList({
+  rules,
+  onChange,
+  tags,
+  t,
+  minRules = 0,
+}: {
+  rules: RuleCfg[];
+  onChange: (rules: RuleCfg[]) => void;
+  tags: UserTag[];
+  t: ReturnType<typeof useTranslations>;
+  minRules?: number;
+}) {
+  return (
+    <div className="space-y-2">
+      {rules.map((rule, i) => (
+        <div key={i} className="space-y-2 rounded-md border border-border/70 p-2">
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">
+              {t("ruleNumber", { n: i + 1 })}
+            </span>
+            {rules.length > minRules && (
+              <button
+                type="button"
+                onClick={() => onChange(rules.filter((_, j) => j !== i))}
+                className="text-[11px] text-red-400 hover:text-red-300"
+              >
+                {t("removeRule")}
+              </button>
+            )}
+          </div>
+          <RuleFields
+            rule={rule}
+            onChange={(patch) => onChange(rules.map((r, j) => (j === i ? { ...r, ...patch } : r)))}
+            tags={tags}
+            t={t}
+          />
+        </div>
+      ))}
+      <Button type="button" variant="outline" size="sm" onClick={() => onChange([...rules, { ...NEW_RULE }])}>
+        {t("addRule")}
+      </Button>
+    </div>
+  );
 }
 
 function ConditionForm({
@@ -679,138 +910,18 @@ function ConditionForm({
   t: ReturnType<typeof useTranslations>;
 }) {
   const tags = useUserTags();
-
-  const subject = cfg.subject ?? "var";
-  const operator = cfg.operator ?? "equals";
-  const showValue = operator === "equals" || operator === "contains";
-
+  const extra = cfg.extra_rules ?? [];
+  const onlyHours = cfg.subject === "business_hours" && extra.length === 0;
   return (
     <>
-      <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
-        <div>
-          <label className="mb-1 block text-xs text-muted-foreground">{t("ifLabel")}</label>
-          <Select
-            value={subject}
-            onValueChange={(v) =>
-              onUpdateConfig(
-                v === "business_hours"
-                  ? {
-                      subject: v,
-                      subject_key: "",
-                      operator: "present",
-                      value: cfg.value && /^\d/.test(cfg.value) ? cfg.value : "08:00-18:00",
-                      days: cfg.days ?? [1, 2, 3, 4, 5],
-                      timezone: cfg.timezone ?? "America/Sao_Paulo",
-                    }
-                  : { subject: v as ConditionCfg["subject"] },
-              )
-            }
-          >
-            <SelectTrigger className="bg-muted">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="var">{t("capturedVariable")}</SelectItem>
-              <SelectItem value="tag">{t("contactHasTag")}</SelectItem>
-              <SelectItem value="contact_field">{t("contactField")}</SelectItem>
-              <SelectItem value="business_hours">{t("businessHours")}</SelectItem>
-            </SelectContent>
-          </Select>
+      <RuleFields rule={cfg} onChange={onUpdateConfig} tags={tags} t={t} />
+      {extra.length > 0 && (
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-muted-foreground">{t("combineLabel")}</span>
+          <MatchSelect value={cfg.match ?? "all"} onChange={(v) => onUpdateConfig({ match: v })} t={t} />
         </div>
-        {subject === "business_hours" ? (
-          <BusinessHoursFields cfg={cfg} onUpdateConfig={onUpdateConfig} t={t} />
-        ) : (
-        <div className="md:col-span-2">
-          <label className="mb-1 block text-xs text-muted-foreground">
-            {subject === "var"
-              ? t("varName")
-              : subject === "tag"
-                ? t("tagLabel")
-                : t("fieldLabel")}
-          </label>
-          {subject === "tag" && tags.length > 0 ? (
-            <Select
-              value={cfg.subject_key ?? ""}
-              onValueChange={(v) => onUpdateConfig({ subject_key: v })}
-            >
-              <SelectTrigger className="bg-muted">
-                <SelectValue placeholder={t("pickTag")} />
-              </SelectTrigger>
-              <SelectContent>
-                {tags.map((t) => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          ) : subject === "contact_field" ? (
-            <Select
-              value={cfg.subject_key ?? ""}
-              onValueChange={(v) => onUpdateConfig({ subject_key: v })}
-            >
-              <SelectTrigger className="bg-muted">
-                <SelectValue placeholder={t("pickField")} />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="name">name</SelectItem>
-                <SelectItem value="email">email</SelectItem>
-                <SelectItem value="phone">phone</SelectItem>
-                <SelectItem value="company">company</SelectItem>
-              </SelectContent>
-            </Select>
-          ) : (
-            <Input
-              value={cfg.subject_key ?? ""}
-              onChange={(e) =>
-                onUpdateConfig({ subject_key: e.target.value })
-              }
-              placeholder={subject === "var" ? t("varKeyPlaceholder") : t("tagUuidPlaceholder")}
-              className="bg-muted font-mono text-xs"
-            />
-          )}
-        </div>
-        )}
-      </div>
-
-      {subject !== "business_hours" && (
-      <div
-        className={cn(
-          "grid grid-cols-1 gap-3",
-          showValue ? "md:grid-cols-2" : "",
-        )}
-      >
-        <div>
-          <label className="mb-1 block text-xs text-muted-foreground">{t("operatorLabel")}</label>
-          <Select
-            value={operator}
-            onValueChange={(v) =>
-              onUpdateConfig({ operator: v as ConditionCfg["operator"] })
-            }
-          >
-            <SelectTrigger className="bg-muted">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="present">{t("isPresent")}</SelectItem>
-              <SelectItem value="absent">{t("isAbsent")}</SelectItem>
-              <SelectItem value="equals">{t("equals")}</SelectItem>
-              <SelectItem value="contains">{t("contains")}</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-        {showValue && (
-          <div>
-            <label className="mb-1 block text-xs text-muted-foreground">{t("valueLabel")}</label>
-            <Input
-              value={cfg.value ?? ""}
-              onChange={(e) => onUpdateConfig({ value: e.target.value })}
-              className="bg-muted"
-            />
-          </div>
-        )}
-      </div>
       )}
+      <RuleList rules={extra} onChange={(rules) => onUpdateConfig({ extra_rules: rules })} tags={tags} t={t} />
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <NextNodeRow
@@ -818,16 +929,109 @@ function ConditionForm({
           allNodes={allNodes}
           currentKey={currentKey}
           onChange={(v) => onUpdateConfig({ true_next: v })}
-          label={subject === "business_hours" ? t("ifOpenAdvance") : t("ifTrueAdvance")}
+          label={onlyHours ? t("ifOpenAdvance") : t("ifTrueAdvance")}
         />
         <NextNodeRow
           value={cfg.false_next ?? ""}
           allNodes={allNodes}
           currentKey={currentKey}
           onChange={(v) => onUpdateConfig({ false_next: v })}
-          label={subject === "business_hours" ? t("ifClosedAdvance") : t("ifFalseAdvance")}
+          label={onlyHours ? t("ifClosedAdvance") : t("ifFalseAdvance")}
         />
       </div>
+    </>
+  );
+}
+
+function nextRouteId(routes: RouteCfg[]): string {
+  let n = routes.length + 1;
+  const ids = new Set(routes.map((r) => r.id));
+  while (ids.has(`r${n}`)) n += 1;
+  return `r${n}`;
+}
+
+function RouterForm({
+  cfg,
+  allNodes,
+  currentKey,
+  onUpdateConfig,
+  t,
+}: {
+  cfg: RouterCfg;
+  allNodes: BuilderNode[];
+  currentKey: string;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const tags = useUserTags();
+  const routes = cfg.routes ?? [];
+  const setRoute = (i: number, patch: Partial<RouteCfg>) =>
+    onUpdateConfig({ routes: routes.map((r, j) => (j === i ? { ...r, ...patch } : r)) });
+  return (
+    <>
+      <p className="text-[10px] text-muted-foreground">{t("routerHelp")}</p>
+      {routes.map((route, i) => (
+        <div key={route.id} className="space-y-2 rounded-lg border border-border p-3">
+          <div className="flex items-center gap-2">
+            <Input
+              value={route.label ?? ""}
+              onChange={(e) => setRoute(i, { label: e.target.value })}
+              placeholder={t("routeLabelPlaceholder", { n: i + 1 })}
+              className="h-8 bg-muted text-xs"
+            />
+            {(route.rules ?? []).length > 1 && (
+              <MatchSelect value={route.match ?? "all"} onChange={(v) => setRoute(i, { match: v })} t={t} />
+            )}
+            {routes.length > 1 && (
+              <button
+                type="button"
+                onClick={() => onUpdateConfig({ routes: routes.filter((_, j) => j !== i) })}
+                className="shrink-0 text-[11px] text-red-400 hover:text-red-300"
+              >
+                {t("removeRoute")}
+              </button>
+            )}
+          </div>
+          <RuleList
+            rules={route.rules ?? []}
+            onChange={(rules) => setRoute(i, { rules })}
+            tags={tags}
+            t={t}
+            minRules={1}
+          />
+          <NextNodeRow
+            value={route.next_node_key ?? ""}
+            allNodes={allNodes}
+            currentKey={currentKey}
+            onChange={(v) => setRoute(i, { next_node_key: v })}
+            label={t("routeAdvancesTo")}
+          />
+        </div>
+      ))}
+      {routes.length < MAX_ROUTES && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() =>
+            onUpdateConfig({
+              routes: [
+                ...routes,
+                { id: nextRouteId(routes), label: "", match: "all", rules: [{ ...NEW_RULE }], next_node_key: "" },
+              ],
+            })
+          }
+        >
+          {t("addRoute")}
+        </Button>
+      )}
+      <NextNodeRow
+        value={cfg.else_next ?? ""}
+        allNodes={allNodes}
+        currentKey={currentKey}
+        onChange={(v) => onUpdateConfig({ else_next: v })}
+        label={t("elseAdvancesTo")}
+      />
     </>
   );
 }
@@ -839,7 +1043,7 @@ function BusinessHoursFields({
   onUpdateConfig,
   t,
 }: {
-  cfg: ConditionCfg;
+  cfg: RuleCfg;
   onUpdateConfig: (patch: Record<string, unknown>) => void;
   t: ReturnType<typeof useTranslations>;
 }) {
@@ -1276,8 +1480,9 @@ function SetTagForm({
 // ============================================================
 
 interface CollectInputCfg {
-  validation?: "any" | "email" | "phone" | "regex";
+  validation?: "any" | "email" | "phone" | "regex" | "media";
   regex?: string;
+  media_reply_text?: string;
   save_to?: "name" | "email" | "company";
 }
 
@@ -1302,7 +1507,9 @@ function CollectInputExtras({
           </label>
           <Select
             value={validation}
-            onValueChange={(v) => onUpdateConfig({ validation: v })}
+            onValueChange={(v) =>
+              onUpdateConfig(v === "media" ? { validation: v, save_to: undefined } : { validation: v })
+            }
           >
             <SelectTrigger className="bg-muted">
               <SelectValue />
@@ -1312,9 +1519,11 @@ function CollectInputExtras({
               <SelectItem value="email">{t("validationEmail")}</SelectItem>
               <SelectItem value="phone">{t("validationPhone")}</SelectItem>
               <SelectItem value="regex">{t("validationRegex")}</SelectItem>
+              <SelectItem value="media">{t("validationMedia")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
+        {validation !== "media" && (
         <div>
           <label className="mb-1 block text-xs text-muted-foreground">
             {t("saveToLabel")}
@@ -1336,6 +1545,7 @@ function CollectInputExtras({
             </SelectContent>
           </Select>
         </div>
+        )}
       </div>
       {validation === "regex" && (
         <div>
@@ -1350,8 +1560,26 @@ function CollectInputExtras({
           />
         </div>
       )}
-      {validation !== "any" && (
-        <p className="text-[10px] text-muted-foreground">{t("validationHelp")}</p>
+      {validation === "media" ? (
+        <p className="text-[10px] text-muted-foreground">{t("validationMediaHelp")}</p>
+      ) : (
+        <>
+          {validation !== "any" && (
+            <p className="text-[10px] text-muted-foreground">{t("validationHelp")}</p>
+          )}
+          <div>
+            <label className="mb-1 block text-xs text-muted-foreground">
+              {t("mediaReplyLabel")}
+            </label>
+            <Input
+              value={cfg.media_reply_text ?? ""}
+              onChange={(e) => onUpdateConfig({ media_reply_text: e.target.value })}
+              placeholder={t("mediaReplyPlaceholder")}
+              className="bg-muted text-xs"
+            />
+            <p className="mt-1 text-[10px] text-muted-foreground">{t("mediaReplyHelp")}</p>
+          </div>
+        </>
       )}
     </>
   );

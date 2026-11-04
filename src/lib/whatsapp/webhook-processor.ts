@@ -549,6 +549,9 @@ function isValidStatusTransition(current: string, incoming: string): boolean {
   return ii > ci
 }
 
+/** Inbound types a flow question treats as a photo / audio / file answer. */
+const FLOW_MEDIA_TYPES = new Set(['image', 'video', 'audio', 'document', 'sticker'])
+
 async function handleStatusUpdate(status: {
   id: string
   status: string
@@ -1045,11 +1048,23 @@ async function processMessage(
             reply_title: contentText ?? '',
             meta_message_id: message.id,
           }
-        : {
-            kind: 'text',
-            text: contentText ?? message.text?.body ?? '',
-            meta_message_id: message.id,
-          },
+        : FLOW_MEDIA_TYPES.has(message.type)
+          ? {
+              kind: 'media',
+              media_kind: message.type,
+              media_url: mediaUrl ?? null,
+              // A document's filename is not an answer; only a caption is.
+              caption:
+                message.type === 'document'
+                  ? message.document?.caption ?? null
+                  : contentText ?? null,
+              meta_message_id: message.id,
+            }
+          : {
+              kind: 'text',
+              text: contentText ?? message.text?.body ?? '',
+              meta_message_id: message.id,
+            },
     isFirstInboundMessage,
   })
   const flowConsumed = flowResult.consumed

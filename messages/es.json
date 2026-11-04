@@ -1219,7 +1219,6 @@
   "Flows": {
     "list": {
       "title": "Flujos",
-      "beta": "Beta",
       "description": "Crea conversaciones de WhatsApp con ramificaciones y botones. Útil para menús, preguntas frecuentes y triaje antes de que intervenga una persona.",
       "newFlow": "Nuevo flujo",
       "statusDraft": "Borrador",
@@ -1249,7 +1248,18 @@
       "triggerKeyword": "Se activa con: {keywords}",
       "triggerFirstInbound": "Se activa con el primer mensaje entrante de un contacto",
       "triggerManual": "Activación manual",
-      "cloneFailedStatus": "Error al clonar: {status}"
+      "cloneFailedStatus": "Error al clonar: {status}",
+      "import": "Importar",
+      "duplicate": "Duplicar",
+      "export": "Exportar",
+      "duplicateSuccess": "Flujo duplicado como borrador.",
+      "duplicateError": "No se pudo duplicar el flujo.",
+      "exportError": "No se pudo exportar el flujo.",
+      "importTooLarge": "Archivo demasiado grande (máximo 512 KB).",
+      "importNotJson": "Este archivo no es un flujo exportado de LabCRM.",
+      "importError": "No se pudo importar el flujo.",
+      "importSuccess": "Flujo importado como borrador.",
+      "importSuccessCleared": "Flujo importado como borrador. {count, plural, one {# elemento debe} other {# elementos deben}} elegirse de nuevo (etiqueta, etapa, agente, número o flujo de otra cuenta)."
     },
     "edit": {
       "notFound": "Flujo no encontrado.",
@@ -1421,7 +1431,28 @@
         "goToFlowNone": "Elige un flujo",
         "goToFlowInactiveName": "{name} (inactivo)",
         "goToFlowInactiveWarning": "Este flujo está inactivo. Actívalo o el cliente se detiene aquí.",
-        "goToFlowHelp": "Este flujo termina y el cliente sigue desde el inicio del flujo elegido, con las mismas respuestas guardadas. Para un submenú que solo debe abrirse desde aquí, usa el disparador Manual en el flujo de destino."
+        "goToFlowHelp": "Este flujo termina y el cliente sigue desde el inicio del flujo elegido, con las mismas respuestas guardadas. Para un submenú que solo debe abrirse desde aquí, usa el disparador Manual en el flujo de destino.",
+        "validationMedia": "Foto, audio o archivo",
+        "validationMediaHelp": "Espera una foto, audio, video o archivo. La variable guarda el enlace del archivo. El texto escrito cuenta como respuesta incorrecta.",
+        "mediaReplyLabel": "Si el cliente envía foto o audio sin texto",
+        "mediaReplyPlaceholder": "Por favor, responda por escrito.",
+        "mediaReplyHelp": "Mensaje enviado antes de repetir la pregunta. Si la foto trae leyenda, la leyenda cuenta como respuesta.",
+        "greaterThan": "es mayor que",
+        "greaterOrEqual": "es mayor o igual a",
+        "lessThan": "es menor que",
+        "lessOrEqual": "es menor o igual a",
+        "matchAll": "Todas las reglas (y)",
+        "matchAny": "Cualquier regla (o)",
+        "ruleNumber": "Regla {n}",
+        "removeRule": "Quitar",
+        "addRule": "+ Agregar regla",
+        "combineLabel": "Combinar reglas:",
+        "routerHelp": "Los caminos se prueban de arriba hacia abajo. Se sigue el primero que cumpla sus reglas. Si ninguno cumple, vale el camino \"Si no\".",
+        "routeLabelPlaceholder": "Nombre del camino {n}",
+        "removeRoute": "Quitar camino",
+        "routeAdvancesTo": "Este camino va a",
+        "addRoute": "+ Agregar camino",
+        "elseAdvancesTo": "Si no, ir a"
       },
       "categories": {
         "messaging": "Mensajería",
@@ -1484,6 +1515,10 @@
         "go_to_flow": {
           "label": "Ir a otro flujo",
           "blurb": "Continúa la atención al inicio de otro flujo"
+        },
+        "router": {
+          "label": "Varios caminos",
+          "blurb": "Elige entre varios caminos según reglas"
         }
       },
       "slotOk": "Éxito",
@@ -1566,7 +1601,8 @@
         "yes": "Sí",
         "no": "No",
         "success": "Salió bien",
-        "error": "Falló"
+        "error": "Falló",
+        "else": "Si no"
       },
       "unit": {
         "minutes": "min",
@@ -1601,8 +1637,12 @@
         "end": "Fin del flujo",
         "end_unknown": "Respuestas inesperadas: el flujo termina",
         "node_missing": "Bloque no encontrado: el flujo se detiene aquí",
-        "loop": "El flujo entró en un bucle sin fin y se detuvo"
-      }
+        "loop": "El flujo entró en un bucle sin fin y se detuvo",
+        "route_taken": "Camino elegido: {route}"
+      },
+      "sendMedia": "Enviar una foto",
+      "photo": "📷 Foto",
+      "askRouter": "Este bloque depende de una etiqueta o campo del contacto. ¿Qué camino seguir en esta prueba?"
     }
   },
   "Settings": {
@@ -2746,7 +2786,13 @@
       "httpNeedsUrl": "El Webhook necesita una URL que empiece por https://.",
       "nodeNeedsNext": "Este nodo debe apuntar a un siguiente nodo.",
       "nodeMissingNext": "Este nodo apunta a un nodo inexistente: \"{key}\".",
-      "goToFlowNeedsFlow": "Elige el flujo de destino."
+      "goToFlowNeedsFlow": "Elige el flujo de destino.",
+      "routerNeedsRoute": "Agrega al menos un camino.",
+      "routerTooManyRoutes": "Como máximo {max} caminos.",
+      "routeNeedsRule": "El camino {route} necesita al menos una regla.",
+      "routeNeedsNext": "Elige a dónde va el camino {route}.",
+      "routerNeedsElse": "Elige a dónde ir cuando ningún camino cumpla.",
+      "operatorNeedsNumber": "Para comparar mayor o menor, el valor debe ser un número."
     },
     "automations": {
       "needsStep": "las automatizaciones activas necesitan al menos un paso",
@@ -2959,7 +3005,17 @@
       "startGroup": "Los flujos no se ejecutan en grupos.",
       "startInactive": "Este flujo no está activo.",
       "startAlreadyInFlow": "Este contacto ya está en un flujo. Espera a que termine o páusalo.",
-      "startFailed": "No se pudo iniciar el flujo."
+      "startFailed": "No se pudo iniciar el flujo.",
+      "copySuffix": "(copia)",
+      "importTooLarge": "Archivo demasiado grande (máximo 512 KB).",
+      "import": {
+        "not_a_flow": "Este archivo no es un flujo exportado de LabCRM.",
+        "unsupported_version": "Este archivo se hizo con una versión más nueva de LabCRM.",
+        "too_many_nodes": "El flujo tiene demasiados bloques (máximo 200).",
+        "bad_node": "El archivo tiene un bloque no válido.",
+        "duplicate_node": "El archivo tiene dos bloques con el mismo id.",
+        "bad_trigger": "El archivo tiene un disparador no válido."
+      }
     },
     "quickReplies": {
       "kindInvalid": "El tipo debe ser \"text\" o \"interactive\"",

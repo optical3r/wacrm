@@ -42,7 +42,10 @@ import {
 import { decideFallback, isExitMessage, resolveFallbackPolicy } from "./fallback";
 import {
   foldKeywordText,
-  isValidCollectedInput,
+  DEFAULT_MEDIA_REPLY_TEXT,
+  combineRules,
+  rulePredicate,
+  readCollectedReply,
   isWithinBusinessHours,
   parseHeaderLines,
   readPath,
@@ -56,6 +59,8 @@ import { removeContactTag } from "@/lib/contacts/tag-write";
 import {
   type CollectInputNodeConfig,
   type ConditionNodeConfig,
+  type ConditionRule,
+  type RouterNodeConfig,
   type CreateDealNodeConfig,
   type DispatchInboundInput,
   type DispatchInboundResult,
@@ -151,6 +156,7 @@ export function matchesKeywordTrigger(
  */
 export function entryTriggerTexts(message: ParsedInbound): string[] {
   if (message.kind === "text") return [message.text];
+  if (message.kind === "media") return message.caption?.trim() ? [message.caption] : [];
   return [...new Set([message.reply_title, message.reply_id])].filter(
     (v): v is string => Boolean(v && v.trim()),
   );
@@ -163,6 +169,7 @@ export function isAutoAdvancing(node_type: string): boolean {
     node_type === "send_message" ||
     node_type === "send_media" ||
     node_type === "condition" ||
+    node_type === "router" ||
     node_type === "set_tag" ||
     node_type === "create_deal" ||
     node_type === "http_fetch"
@@ -200,18 +207,7 @@ export function evaluateConditionPredicate(args: {
   /** The configured comparison value, when applicable. */
   configValue: string | undefined;
 }): boolean {
-  switch (args.operator) {
-    case "present":
-      return args.subjectValue !== undefined && args.subjectValue !== "";
-    case "absent":
-      return args.subjectValue === undefined || args.subjectValue === "";
-    case "equals":
-      if (args.subjectValue === undefined) return false;
-      return args.subjectValue === (args.configValue ?? "");
-    case "contains":
-      if (args.subjectValue === undefined) return false;
-      return args.subjectValue.includes(args.configValue ?? "");
-  }
+  return rulePredicate(args.operator, args.subjectValue, args.configValue);
 }
 
 // ============================================================
@@ -540,10 +536,10 @@ async function executeHandoff(
  *     `subject_key` IS the tag UUID; the SELECT returns 1 row or 0.
  *   - `contact_field` → one of name/email/phone/company on `contacts`.
  */
-async function evaluateConditionNode(
+async function evaluateRule(
   db: AdminClient,
   run: FlowRunRow,
-  cfg: ConditionNodeConfig,
+  cfg: ConditionRule,
 ): Promise<boolean> {
   let subjectValue: string | undefined;
   if (cfg.subject === "business_hours") {
@@ -587,6 +583,32 @@ async function evaluateConditionNode(
     subjectValue,
     configValue: cfg.value,
   });
+}
+
+/** A condition node: its own rule plus `extra_rules`, per `match`. */
+async function evaluateConditionNode(
+  db: AdminClient,
+  run: FlowRunRow,
+  cfg: ConditionNodeConfig,
+): Promise<boolean> {
+  const rules: ConditionRule[] = [cfg, ...(cfg.extra_rules ?? [])];
+  const results: boolean[] = [];
+  for (const rule of rules) results.push(await evaluateRule(db, run, rule));
+  return combineRules(results, cfg.match);
+}
+
+/** A router node: the first route whose rules hold, else `else_next`. */
+async function evaluateRouterNode(
+  db: AdminClient,
+  run: FlowRunRow,
+  cfg: RouterNodeConfig,
+): Promise<{ next: string; route: string }> {
+  for (const route of cfg.routes ?? []) {
+    const results: boolean[] = [];
+    for (const rule of route.rules ?? []) results.push(await evaluateRule(db, run, rule));
+    if (combineRules(results, route.match)) return { next: route.next_node_key, route: route.id };
+  }
+  return { next: cfg.else_next, route: "else" };
 }
 
 /**
@@ -801,6 +823,25 @@ async function advanceFromNodeKey(
         condition_result: branch,
         advancing_to: currentKey,
       });
+      continue;
+    }
+    if (node.node_type === "router") {
+      const cfg = node.config as unknown as RouterNodeConfig;
+      try {
+        const picked = await evaluateRouterNode(db, run, cfg);
+        currentKey = picked.next;
+        await logEvent(db, run.id, "node_entered", node.node_key, {
+          route: picked.route,
+          advancing_to: currentKey,
+        });
+      } catch (err) {
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "router_evaluation_failed",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+        await endRun(db, run.id, "failed", "router_evaluation_failed");
+        return { outcome: "completed" };
+      }
       continue;
     }
     if (node.node_type === "set_tag") {
@@ -1309,6 +1350,7 @@ async function handleReplyForActiveRun(
     reply_kind: message.kind,
     reply_id: message.kind === "interactive_reply" ? message.reply_id : null,
     text_length: message.kind === "text" ? message.text.length : null,
+    media_kind: message.kind === "media" ? message.media_kind : null,
   });
 
   if (!run.current_node_key) {
@@ -1330,7 +1372,9 @@ async function handleReplyForActiveRun(
 
   // "sair" / "atendente" at any point: stop the bot, hand to a person.
   const policy = resolveFallbackPolicy((await loadFlow(db, run.flow_id))?.fallback_policy);
-  if (message.kind === "text" && isExitMessage(message.text, policy)) {
+  const replyText =
+    message.kind === "text" ? message.text : message.kind === "media" ? message.caption ?? "" : "";
+  if (message.kind !== "interactive_reply" && isExitMessage(replyText, policy)) {
     if (run.conversation_id) {
       await db
         .from("conversations")
@@ -1357,6 +1401,7 @@ async function handleReplyForActiveRun(
   //
   // Everything else falls through to the fallback policy below.
   let matched: string | null = null;
+  let mediaWithoutText = false;
   if (
     message.kind === "interactive_reply" &&
     (currentNode.node_type === "send_buttons" ||
@@ -1364,12 +1409,13 @@ async function handleReplyForActiveRun(
   ) {
     matched = matchReplyId(currentNode, message.reply_id);
   } else if (
-    message.kind === "text" &&
+    message.kind !== "interactive_reply" &&
     currentNode.node_type === "collect_input"
   ) {
     const cfg = currentNode.config as unknown as CollectInputNodeConfig;
-    const captured = message.text.trim();
-    const valid = isValidCollectedInput(captured, cfg.validation, cfg.regex);
+    const read = readCollectedReply(message, cfg.validation, cfg.regex);
+    const { captured, valid } = read;
+    mediaWithoutText = read.mediaWithoutText;
     if (!valid && captured.length > 0) {
       await logEvent(db, run.id, "node_entered", currentNode.node_key, {
         validation_failed: cfg.validation ?? "any",
@@ -1395,7 +1441,7 @@ async function handleReplyForActiveRun(
           captured_key: cfg.var_key,
           captured_length: captured.length,
         });
-        if (cfg.save_to && run.contact_id) {
+        if (cfg.save_to && run.contact_id && message.kind === "text") {
           await saveCapturedToContact(db, run, currentNode.node_key, cfg.save_to, captured);
         }
         matched = cfg.next_node_key;
@@ -1457,6 +1503,16 @@ async function handleReplyForActiveRun(
         // Customer typed something we couldn't accept (empty, or not in
         // the node's format). Re-send the prompt so they try again.
         const cfg = currentNode.config as unknown as CollectInputNodeConfig;
+        if (mediaWithoutText) {
+          // A photo / audio to a text question: say so before asking again.
+          await engineSendText({
+            accountId: run.account_id,
+            userId: run.user_id,
+            conversationId: run.conversation_id!,
+            contactId: run.contact_id!,
+            text: interpolateVars(cfg.media_reply_text?.trim() || DEFAULT_MEDIA_REPLY_TEXT, run.vars),
+          });
+        }
         await engineSendText({
           accountId: run.account_id,
           userId: run.user_id,

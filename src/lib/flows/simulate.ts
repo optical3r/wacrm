@@ -10,7 +10,15 @@
  * Side effects (tags, deals, waits, handoff) become notes.
  */
 
-import { isValidCollectedInput, isWithinBusinessHours, readPath, varToText } from "./engine-match";
+import {
+  DEFAULT_MEDIA_REPLY_TEXT,
+  combineRules,
+  isWithinBusinessHours,
+  readCollectedReply,
+  readPath,
+  rulePredicate,
+  varToText,
+} from "./engine-match";
 import { decideFallback, isExitMessage, resolveFallbackPolicy } from "./fallback";
 
 export interface SimNode {
@@ -27,6 +35,7 @@ export type SimNoteCode =
   | "webhook_skipped"
   | "saved_to_contact"
   | "condition_result"
+  | "route_taken"
   | "invalid_format"
   | "reprompt"
   | "ignored"
@@ -51,14 +60,14 @@ export type SimBubble =
       buttonLabel?: string;
       options: Array<{ id: string; title: string; description?: string }>;
     }
-  | { from: "customer"; text: string }
+  | { from: "customer"; text: string; media?: boolean }
   | { from: "system"; code: SimNoteCode; params?: Record<string, string | number> };
 
 /** A question to the tester about something only the server knows. */
 export interface SimChoice {
-  code: "condition" | "webhook";
+  code: "condition" | "webhook" | "router";
   params?: Record<string, string>;
-  options: Array<{ code: "yes" | "no" | "success" | "error"; next: string }>;
+  options: Array<{ code: "yes" | "no" | "success" | "error" | "route" | "else"; label?: string; next: string }>;
 }
 
 export interface SimState {
@@ -73,6 +82,7 @@ export interface SimState {
 
 export type SimInput =
   | { kind: "text"; text: string }
+  | { kind: "media" }
   | { kind: "tap"; id: string; title: string };
 
 const MAX_STEPS = 64;
@@ -90,19 +100,36 @@ function nextOf(cfg: Record<string, unknown>): string {
   return typeof cfg.next_node_key === "string" ? cfg.next_node_key : "";
 }
 
-function conditionHolds(operator: unknown, subject: string | undefined, value: string | undefined): boolean {
-  switch (operator) {
-    case "present":
-      return subject !== undefined && subject !== "";
-    case "absent":
-      return subject === undefined || subject === "";
-    case "equals":
-      return subject !== undefined && subject === (value ?? "");
-    case "contains":
-      return subject !== undefined && subject.includes(value ?? "");
-    default:
-      return false;
+/**
+ * One rule's result in the browser: a var or the opening hours can be
+ * known; a tag or a contact field cannot (null → ask the tester).
+ */
+function ruleResult(rule: Record<string, unknown>, vars: Record<string, unknown>, now: Date): boolean | null {
+  if (rule.subject === "var") {
+    const raw = readPath(vars, String(rule.subject_key ?? ""));
+    const value = raw === undefined || raw === null ? undefined : varToText(raw);
+    return rulePredicate(String(rule.operator ?? ""), value, typeof rule.value === "string" ? rule.value : undefined);
   }
+  if (rule.subject === "business_hours") {
+    return isWithinBusinessHours(now, {
+      window: typeof rule.value === "string" ? rule.value : undefined,
+      days: Array.isArray(rule.days) ? (rule.days as number[]) : undefined,
+      timezone: typeof rule.timezone === "string" ? rule.timezone : undefined,
+    });
+  }
+  return null;
+}
+
+/** All rules known → their combined result; any unknown → null. */
+function rulesResult(
+  rules: Array<Record<string, unknown>>,
+  match: unknown,
+  vars: Record<string, unknown>,
+  now: Date,
+): boolean | null {
+  const results = rules.map((r) => ruleResult(r, vars, now));
+  if (results.some((r) => r === null)) return null;
+  return combineRules(results as boolean[], match === "any" ? "any" : "all");
 }
 
 function replyTarget(node: SimNode, replyId: string): string | null {
@@ -201,23 +228,13 @@ function advance(prev: SimState, nodes: Map<string, SimNode>, key: string, now: 
       case "condition": {
         const trueNext: string = String(cfg.true_next ?? "");
         const falseNext = String(cfg.false_next ?? "");
-        let result: boolean | null = null;
-        if (cfg.subject === "var") {
-          const raw = readPath(s.vars, String(cfg.subject_key ?? ""));
-          const value = raw === undefined || raw === null ? undefined : varToText(raw);
-          result = conditionHolds(cfg.operator, value, typeof cfg.value === "string" ? cfg.value : undefined);
-        } else if (cfg.subject === "business_hours") {
-          result = isWithinBusinessHours(now, {
-            window: typeof cfg.value === "string" ? cfg.value : undefined,
-            days: Array.isArray(cfg.days) ? (cfg.days as number[]) : undefined,
-            timezone: typeof cfg.timezone === "string" ? cfg.timezone : undefined,
-          });
-        }
+        const extra = Array.isArray(cfg.extra_rules) ? (cfg.extra_rules as Array<Record<string, unknown>>) : [];
+        const result = rulesResult([cfg, ...extra], cfg.match, s.vars, now);
         if (result === null) {
           // A tag or a contact field: only the tester knows.
           s.choice = {
             code: "condition",
-            params: { subject: String(cfg.subject ?? ""), key: String(cfg.subject_key ?? "") },
+            params: { subject: String((([cfg, ...extra].find((r) => ruleResult(r, s.vars, now) === null) ?? cfg).subject) ?? "") },
             options: [
               { code: "yes", next: trueNext },
               { code: "no", next: falseNext },
@@ -228,6 +245,43 @@ function advance(prev: SimState, nodes: Map<string, SimNode>, key: string, now: 
         }
         note("condition_result", { result: result ? "yes" : "no", subject: String(cfg.subject ?? "") });
         current = result ? trueNext : falseNext;
+        continue;
+      }
+      case "router": {
+        const routes = Array.isArray(cfg.routes)
+          ? (cfg.routes as Array<{ id?: string; label?: string; match?: string; rules?: Array<Record<string, unknown>>; next_node_key?: string }>)
+          : [];
+        const elseNext = String(cfg.else_next ?? "");
+        let picked: { next: string; label: string } | null = null;
+        let unknown = false;
+        for (const [i, route] of routes.entries()) {
+          const r = rulesResult(route.rules ?? [], route.match, s.vars, now);
+          if (r === null) {
+            unknown = true;
+            break;
+          }
+          if (r) {
+            picked = { next: route.next_node_key ?? "", label: route.label?.trim() || String(i + 1) };
+            break;
+          }
+        }
+        if (unknown) {
+          s.choice = {
+            code: "router",
+            options: [
+              ...routes.map((route, i) => ({
+                code: "route" as const,
+                label: route.label?.trim() || String(i + 1),
+                next: route.next_node_key ?? "",
+              })),
+              { code: "else" as const, next: elseNext },
+            ],
+          };
+          s.currentKey = node.node_key;
+          return s;
+        }
+        note("route_taken", { route: picked ? picked.label : "else" });
+        current = picked ? picked.next : elseNext;
         continue;
       }
       case "set_tag":
@@ -308,7 +362,12 @@ export function replyInSimulation(
   const s: SimState = {
     ...state,
     vars: { ...state.vars },
-    transcript: [...state.transcript, { from: "customer", text: input.kind === "text" ? input.text : input.title }],
+    transcript: [
+      ...state.transcript,
+      input.kind === "media"
+        ? { from: "customer", text: "", media: true }
+        : { from: "customer", text: input.kind === "text" ? input.text : input.title },
+    ],
   };
   const end = (code: SimNoteCode): SimState => ({
     ...s,
@@ -323,16 +382,25 @@ export function replyInSimulation(
   if (!node) return end("node_missing");
 
   let matched: string | null = null;
+  let mediaWithoutText = false;
   if (input.kind === "tap" && (node.node_type === "send_buttons" || node.node_type === "send_list")) {
     matched = replyTarget(node, input.id);
-  } else if (input.kind === "text" && node.node_type === "collect_input") {
+  } else if (input.kind !== "tap" && node.node_type === "collect_input") {
     const cfg = node.config ?? {};
-    const text = input.text.trim();
-    const validation = cfg.validation as "any" | "email" | "phone" | "regex" | undefined;
-    if (isValidCollectedInput(text, validation, typeof cfg.regex === "string" ? cfg.regex : undefined)) {
+    const validation = cfg.validation as "any" | "email" | "phone" | "regex" | "media" | undefined;
+    const read = readCollectedReply(
+      input.kind === "media"
+        ? { kind: "media", media_kind: "image", media_url: "https://exemplo/foto.jpg" }
+        : { kind: "text", text: input.text },
+      validation,
+      typeof cfg.regex === "string" ? cfg.regex : undefined,
+    );
+    const text = read.captured;
+    mediaWithoutText = read.mediaWithoutText;
+    if (read.valid) {
       const varKey = typeof cfg.var_key === "string" ? cfg.var_key : "";
       if (varKey) s.vars[varKey] = text;
-      if (typeof cfg.save_to === "string" && cfg.save_to) {
+      if (input.kind === "text" && typeof cfg.save_to === "string" && cfg.save_to) {
         s.transcript.push({ from: "system", code: "saved_to_contact", params: { field: cfg.save_to } });
       }
       matched = nextOf(cfg);
@@ -350,9 +418,25 @@ export function replyInSimulation(
   }
   if (action.type === "handoff") return end("handoff_unknown");
   if (action.type === "end") return end("end_unknown");
-  // Reprompt: the same node sends its question again.
+  // Reprompt: the same node sends its question again, after asking for
+  // a written answer when a photo / audio came without text.
+  const hint = mediaWithoutText
+    ? interp(
+        (typeof node.config?.media_reply_text === "string" && node.config.media_reply_text.trim()) ||
+          DEFAULT_MEDIA_REPLY_TEXT,
+        s.vars,
+      )
+    : null;
   return advance(
-    { ...s, reprompts, transcript: [...s.transcript, { from: "system", code: "reprompt" }] },
+    {
+      ...s,
+      reprompts,
+      transcript: [
+        ...s.transcript,
+        ...(hint ? [{ from: "bot" as const, kind: "text" as const, text: hint }] : []),
+        { from: "system" as const, code: "reprompt" as const },
+      ],
+    },
     byKey,
     node.node_key,
     now,

@@ -1219,7 +1219,6 @@
   "Flows": {
     "list": {
       "title": "Flows",
-      "beta": "Beta",
       "description": "Build branching, button-driven WhatsApp conversations. Useful for menus, FAQs, and triage before a human steps in.",
       "newFlow": "New flow",
       "statusDraft": "Draft",
@@ -1249,7 +1248,18 @@
       "triggerKeyword": "Triggers on: {keywords}",
       "triggerFirstInbound": "Triggers on a contact's first-ever inbound message",
       "triggerManual": "Manual trigger",
-      "cloneFailedStatus": "Clone failed: {status}"
+      "cloneFailedStatus": "Clone failed: {status}",
+      "import": "Import",
+      "duplicate": "Duplicate",
+      "export": "Export",
+      "duplicateSuccess": "Flow duplicated as a draft.",
+      "duplicateError": "Couldn't duplicate the flow.",
+      "exportError": "Couldn't export the flow.",
+      "importTooLarge": "File too large (512 KB max).",
+      "importNotJson": "This file isn't a flow exported from LabCRM.",
+      "importError": "Couldn't import the flow.",
+      "importSuccess": "Flow imported as a draft.",
+      "importSuccessCleared": "Flow imported as a draft. {count, plural, one {# item needs} other {# items need}} to be picked again (tag, stage, attendant, number or flow from another account)."
     },
     "edit": {
       "notFound": "Flow not found.",
@@ -1421,7 +1431,28 @@
         "goToFlowNone": "Pick a flow",
         "goToFlowInactiveName": "{name} (inactive)",
         "goToFlowInactiveWarning": "This flow is inactive. Activate it, or the customer stops here.",
-        "goToFlowHelp": "This flow ends and the customer carries on from the start of the chosen flow, with the same saved answers. For a submenu that should only open from here, give the target flow the Manual trigger."
+        "goToFlowHelp": "This flow ends and the customer carries on from the start of the chosen flow, with the same saved answers. For a submenu that should only open from here, give the target flow the Manual trigger.",
+        "validationMedia": "Photo, audio or file",
+        "validationMediaHelp": "Expects a photo, audio, video or file. The variable keeps the file's link. Typed text counts as a wrong answer.",
+        "mediaReplyLabel": "If the customer sends a photo or audio with no text",
+        "mediaReplyPlaceholder": "Por favor, responda por escrito.",
+        "mediaReplyHelp": "Sent before the question is asked again. A photo with a caption uses the caption as the answer.",
+        "greaterThan": "is greater than",
+        "greaterOrEqual": "is greater than or equal to",
+        "lessThan": "is less than",
+        "lessOrEqual": "is less than or equal to",
+        "matchAll": "All rules (and)",
+        "matchAny": "Any rule (or)",
+        "ruleNumber": "Rule {n}",
+        "removeRule": "Remove",
+        "addRule": "+ Add rule",
+        "combineLabel": "Combine rules:",
+        "routerHelp": "Paths are tested top to bottom. The first one whose rules hold is followed. If none does, the \"Else\" path is used.",
+        "routeLabelPlaceholder": "Path {n} name",
+        "removeRoute": "Remove path",
+        "routeAdvancesTo": "This path goes to",
+        "addRoute": "+ Add path",
+        "elseAdvancesTo": "Else, go to"
       },
       "categories": {
         "messaging": "Messaging",
@@ -1484,6 +1515,10 @@
         "go_to_flow": {
           "label": "Go to another flow",
           "blurb": "Carries on at the start of another flow"
+        },
+        "router": {
+          "label": "Multiple paths",
+          "blurb": "Picks one of several paths by rules"
         }
       },
       "slotOk": "Success",
@@ -1566,7 +1601,8 @@
         "yes": "Yes",
         "no": "No",
         "success": "Succeeded",
-        "error": "Failed"
+        "error": "Failed",
+        "else": "Else"
       },
       "unit": {
         "minutes": "min",
@@ -1601,8 +1637,12 @@
         "end": "End of the flow",
         "end_unknown": "Unexpected answers: the flow ends",
         "node_missing": "Block not found: the flow stops here",
-        "loop": "The flow looped endlessly and stopped"
-      }
+        "loop": "The flow looped endlessly and stopped",
+        "route_taken": "Path taken: {route}"
+      },
+      "sendMedia": "Send a photo",
+      "photo": "📷 Photo",
+      "askRouter": "This block depends on a tag or contact field. Which path should this test follow?"
     }
   },
   "Settings": {
@@ -2746,7 +2786,13 @@
       "httpNeedsUrl": "The Webhook needs a URL starting with https://.",
       "nodeNeedsNext": "This node must point to a next node.",
       "nodeMissingNext": "This node points to a missing node: \"{key}\".",
-      "goToFlowNeedsFlow": "Pick the target flow."
+      "goToFlowNeedsFlow": "Pick the target flow.",
+      "routerNeedsRoute": "Add at least one path.",
+      "routerTooManyRoutes": "At most {max} paths.",
+      "routeNeedsRule": "Path {route} needs at least one rule.",
+      "routeNeedsNext": "Pick where path {route} goes.",
+      "routerNeedsElse": "Pick where to go when no path matches.",
+      "operatorNeedsNumber": "To compare greater or less, the value must be a number."
     },
     "automations": {
       "needsStep": "active automations need at least one step",
@@ -2959,7 +3005,17 @@
       "startGroup": "Flows don't run in groups.",
       "startInactive": "This flow is not active.",
       "startAlreadyInFlow": "This contact is already in a flow. Wait for it to end or pause it.",
-      "startFailed": "Could not start the flow."
+      "startFailed": "Could not start the flow.",
+      "copySuffix": "(copy)",
+      "importTooLarge": "File too large (512 KB max).",
+      "import": {
+        "not_a_flow": "This file isn't a flow exported from LabCRM.",
+        "unsupported_version": "This file was made by a newer version of LabCRM.",
+        "too_many_nodes": "The flow has too many blocks (200 max).",
+        "bad_node": "The file has an invalid block.",
+        "duplicate_node": "The file has two blocks with the same id.",
+        "bad_trigger": "The file has an invalid trigger."
+      }
     },
     "quickReplies": {
       "kindInvalid": "kind must be \"text\" or \"interactive\"",

@@ -704,6 +704,7 @@ const ADD_NODE_TYPES: NodeType[] = [
   'send_media',
   'collect_input',
   'condition',
+  'router',
   'set_tag',
   'create_deal',
   'wait',

@@ -25,7 +25,7 @@
 
 import { INTERACTIVE_LIMITS } from "@/lib/whatsapp/meta-api";
 import { getT } from "@/lib/i18n/translate";
-import { foldKeywordText, parseHoursWindow } from "./engine-match";
+import { foldKeywordText, parseHoursWindow, parseLooseNumber } from "./engine-match";
 
 const t = getT("Validation.flows");
 
@@ -185,6 +185,47 @@ function validateTrigger(
 // ============================================================
 // Per-node
 // ============================================================
+
+/** Most routes a router node may have. */
+export const MAX_ROUTES = 10;
+
+const RULE_OPERATORS = ["equals", "contains", "present", "absent", "gt", "gte", "lt", "lte"];
+
+interface RuleInput {
+  subject?: string;
+  subject_key?: string;
+  operator?: string;
+  value?: string;
+}
+
+/** Checks one rule of a condition or router. `prefix` names its field path. */
+function validateRule(rule: RuleInput, nodeKey: string, prefix: string): ValidationIssue[] {
+  const issues: ValidationIssue[] = [];
+  const isHours = rule.subject === "business_hours";
+  if (isHours && !parseHoursWindow(rule.value)) {
+    issues.push({ severity: "error", scope: "node", node_key: nodeKey, field: `${prefix}value`, message: t("businessHoursInvalid") });
+  }
+  if (!rule.subject || !["var", "tag", "contact_field", "business_hours"].includes(rule.subject)) {
+    issues.push({ severity: "error", scope: "node", node_key: nodeKey, field: `${prefix}subject`, message: t("conditionNeedsSubject") });
+  }
+  if (!isHours && !rule.subject_key?.trim()) {
+    issues.push({ severity: "error", scope: "node", node_key: nodeKey, field: `${prefix}subject_key`, message: t("conditionNeedsSubjectKey") });
+  }
+  if (!rule.operator || !RULE_OPERATORS.includes(rule.operator)) {
+    issues.push({ severity: "error", scope: "node", node_key: nodeKey, field: `${prefix}operator`, message: t("conditionNeedsOperator") });
+  } else if (!isHours && (rule.operator === "equals" || rule.operator === "contains") && !rule.value) {
+    issues.push({
+      severity: "warning",
+      scope: "node",
+      node_key: nodeKey,
+      field: `${prefix}value`,
+      message: t("operatorNeedsValue", { operator: rule.operator }),
+    });
+  } else if (!isHours && ["gt", "gte", "lt", "lte"].includes(rule.operator) && parseLooseNumber(rule.value) === null) {
+    issues.push({ severity: "error", scope: "node", node_key: nodeKey, field: `${prefix}value`, message: t("operatorNeedsNumber") });
+  }
+  return issues;
+}
 
 function validateNode(
   node: NodeInput,
@@ -619,66 +660,15 @@ function validateNode(
     }
 
     case "condition": {
-      const cfg = node.config as {
-        subject?: "var" | "tag" | "contact_field" | "business_hours";
-        subject_key?: string;
-        operator?: "equals" | "contains" | "present" | "absent";
-        value?: string;
+      const cfg = node.config as RuleInput & {
+        extra_rules?: RuleInput[];
         true_next?: string;
         false_next?: string;
       };
-      const isHours = cfg.subject === "business_hours";
-      if (isHours && !parseHoursWindow(cfg.value)) {
-        issues.push({
-          severity: "error",
-          scope: "node",
-          node_key: node.node_key,
-          field: "value",
-          message: t("businessHoursInvalid"),
-        });
-      }
-      if (!cfg.subject || !["var", "tag", "contact_field", "business_hours"].includes(cfg.subject)) {
-        issues.push({
-          severity: "error",
-          scope: "node",
-          node_key: node.node_key,
-          field: "subject",
-          message: t("conditionNeedsSubject"),
-        });
-      }
-      if (!isHours && !cfg.subject_key?.trim()) {
-        issues.push({
-          severity: "error",
-          scope: "node",
-          node_key: node.node_key,
-          field: "subject_key",
-          message: t("conditionNeedsSubjectKey"),
-        });
-      }
-      if (
-        !cfg.operator ||
-        !["equals", "contains", "present", "absent"].includes(cfg.operator)
-      ) {
-        issues.push({
-          severity: "error",
-          scope: "node",
-          node_key: node.node_key,
-          field: "operator",
-          message: t("conditionNeedsOperator"),
-        });
-      } else if (
-        !isHours &&
-        (cfg.operator === "equals" || cfg.operator === "contains") &&
-        (cfg.value === undefined || cfg.value === "")
-      ) {
-        issues.push({
-          severity: "warning",
-          scope: "node",
-          node_key: node.node_key,
-          field: "value",
-          message: t("operatorNeedsValue", { operator: cfg.operator }),
-        });
-      }
+      issues.push(...validateRule(cfg, node.node_key, ""));
+      (cfg.extra_rules ?? []).forEach((rule, i) => {
+        issues.push(...validateRule(rule, node.node_key, `extra_rules.${i}.`));
+      });
       for (const branch of ["true_next", "false_next"] as const) {
         const key = cfg[branch];
         if (!key) {
@@ -700,6 +690,82 @@ function validateNode(
             message: t("conditionMissingBranch", { branch, key }),
           });
         }
+      }
+      break;
+    }
+
+    case "router": {
+      const cfg = node.config as {
+        routes?: Array<{ label?: string; rules?: RuleInput[]; next_node_key?: string }>;
+        else_next?: string;
+      };
+      const routes = cfg.routes ?? [];
+      if (routes.length === 0) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "routes",
+          message: t("routerNeedsRoute"),
+        });
+      }
+      if (routes.length > MAX_ROUTES) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "routes",
+          message: t("routerTooManyRoutes", { max: MAX_ROUTES }),
+        });
+      }
+      routes.forEach((route, i) => {
+        const label = route.label?.trim() || String(i + 1);
+        if (!route.rules || route.rules.length === 0) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: `routes.${i}.rules`,
+            message: t("routeNeedsRule", { route: label }),
+          });
+        }
+        (route.rules ?? []).forEach((rule, j) => {
+          issues.push(...validateRule(rule, node.node_key, `routes.${i}.rules.${j}.`));
+        });
+        if (!route.next_node_key) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: `routes.${i}.next_node_key`,
+            message: t("routeNeedsNext", { route: label }),
+          });
+        } else if (!knownKeys.has(route.next_node_key)) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: `routes.${i}.next_node_key`,
+            message: t("nodeMissingNext", { key: route.next_node_key }),
+          });
+        }
+      });
+      if (!cfg.else_next) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "else_next",
+          message: t("routerNeedsElse"),
+        });
+      } else if (!knownKeys.has(cfg.else_next)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "else_next",
+          message: t("nodeMissingNext", { key: cfg.else_next }),
+        });
       }
       break;
     }
@@ -932,6 +998,12 @@ export function outgoingEdges(node: NodeInput): string[] {
       if (cfg.true_next) out.push(cfg.true_next);
       if (cfg.false_next) out.push(cfg.false_next);
       return out;
+    }
+    case "router": {
+      const cfg = node.config as { routes?: Array<{ next_node_key?: string }>; else_next?: string };
+      return [...(cfg.routes ?? []).map((r) => r.next_node_key), cfg.else_next].filter(
+        (k): k is string => Boolean(k),
+      );
     }
     case "send_buttons": {
       const cfg = node.config as {

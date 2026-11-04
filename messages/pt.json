@@ -1219,7 +1219,6 @@
   "Flows": {
     "list": {
       "title": "Fluxos",
-      "beta": "Beta",
       "description": "Crie conversas de WhatsApp com ramificações e botões. Útil para menus, FAQs e triagem antes de um humano entrar.",
       "newFlow": "Novo fluxo",
       "statusDraft": "Rascunho",
@@ -1249,7 +1248,18 @@
       "triggerKeyword": "Acionado por: {keywords}",
       "triggerFirstInbound": "Acionado pela primeira mensagem recebida de um contato",
       "triggerManual": "Acionamento manual",
-      "cloneFailedStatus": "Falha ao clonar: {status}"
+      "cloneFailedStatus": "Falha ao clonar: {status}",
+      "import": "Importar",
+      "duplicate": "Duplicar",
+      "export": "Exportar",
+      "duplicateSuccess": "Fluxo duplicado como rascunho.",
+      "duplicateError": "Não foi possível duplicar o fluxo.",
+      "exportError": "Não foi possível exportar o fluxo.",
+      "importTooLarge": "Arquivo grande demais (máximo 512 KB).",
+      "importNotJson": "Esse arquivo não é um fluxo exportado do LabCRM.",
+      "importError": "Não foi possível importar o fluxo.",
+      "importSuccess": "Fluxo importado como rascunho.",
+      "importSuccessCleared": "Fluxo importado como rascunho. {count, plural, one {# item precisa} other {# itens precisam}} ser escolhido de novo (etiqueta, etapa, atendente, número ou fluxo de outra conta)."
     },
     "edit": {
       "notFound": "Fluxo não encontrado.",
@@ -1421,7 +1431,28 @@
         "goToFlowNone": "Escolha um fluxo",
         "goToFlowInactiveName": "{name} (inativo)",
         "goToFlowInactiveWarning": "Este fluxo está inativo. Ative-o, senão o cliente para aqui.",
-        "goToFlowHelp": "Este fluxo termina e o cliente segue do início do fluxo escolhido, com as mesmas respostas guardadas. Para um submenu que só deve abrir por aqui, use o gatilho Manual no fluxo de destino."
+        "goToFlowHelp": "Este fluxo termina e o cliente segue do início do fluxo escolhido, com as mesmas respostas guardadas. Para um submenu que só deve abrir por aqui, use o gatilho Manual no fluxo de destino.",
+        "validationMedia": "Foto, áudio ou arquivo",
+        "validationMediaHelp": "Espera uma foto, áudio, vídeo ou arquivo. A variável guarda o link do arquivo. Texto digitado conta como resposta errada.",
+        "mediaReplyLabel": "Se o cliente mandar foto ou áudio sem texto",
+        "mediaReplyPlaceholder": "Por favor, responda por escrito.",
+        "mediaReplyHelp": "Mensagem enviada antes de repetir a pergunta. Se a foto vier com legenda, a legenda vale como resposta.",
+        "greaterThan": "é maior que",
+        "greaterOrEqual": "é maior ou igual a",
+        "lessThan": "é menor que",
+        "lessOrEqual": "é menor ou igual a",
+        "matchAll": "Todas as regras (e)",
+        "matchAny": "Qualquer regra (ou)",
+        "ruleNumber": "Regra {n}",
+        "removeRule": "Remover",
+        "addRule": "+ Adicionar regra",
+        "combineLabel": "Combinar regras:",
+        "routerHelp": "Os caminhos são testados de cima para baixo. O primeiro que atender às regras é seguido. Se nenhum atender, vale o caminho \"Senão\".",
+        "routeLabelPlaceholder": "Nome do caminho {n}",
+        "removeRoute": "Remover caminho",
+        "routeAdvancesTo": "Este caminho segue para",
+        "addRoute": "+ Adicionar caminho",
+        "elseAdvancesTo": "Senão, segue para"
       },
       "categories": {
         "messaging": "Mensagens",
@@ -1484,6 +1515,10 @@
         "go_to_flow": {
           "label": "Ir para outro fluxo",
           "blurb": "Continua o atendimento no início de outro fluxo"
+        },
+        "router": {
+          "label": "Vários caminhos",
+          "blurb": "Escolhe entre vários caminhos conforme regras"
         }
       },
       "slotOk": "Deu certo",
@@ -1566,7 +1601,8 @@
         "yes": "Sim",
         "no": "Não",
         "success": "Deu certo",
-        "error": "Deu erro"
+        "error": "Deu erro",
+        "else": "Senão"
       },
       "unit": {
         "minutes": "min",
@@ -1601,8 +1637,12 @@
         "end": "Fim do fluxo",
         "end_unknown": "Respostas fora do esperado: o fluxo termina",
         "node_missing": "Bloco não encontrado: o fluxo para aqui",
-        "loop": "O fluxo entrou em repetição sem fim e parou"
-      }
+        "loop": "O fluxo entrou em repetição sem fim e parou",
+        "route_taken": "Caminho escolhido: {route}"
+      },
+      "sendMedia": "Enviar uma foto",
+      "photo": "📷 Foto",
+      "askRouter": "Este bloco depende de etiqueta ou campo do contato. Qual caminho seguir neste teste?"
     }
   },
   "Settings": {
@@ -2746,7 +2786,13 @@
       "httpNeedsUrl": "O Webhook precisa de uma URL que comece com https://.",
       "nodeNeedsNext": "Este nó precisa apontar para um próximo nó.",
       "nodeMissingNext": "Este nó aponta para um nó inexistente: \"{key}\".",
-      "goToFlowNeedsFlow": "Escolha o fluxo de destino."
+      "goToFlowNeedsFlow": "Escolha o fluxo de destino.",
+      "routerNeedsRoute": "Adicione pelo menos um caminho.",
+      "routerTooManyRoutes": "No máximo {max} caminhos.",
+      "routeNeedsRule": "O caminho {route} precisa de pelo menos uma regra.",
+      "routeNeedsNext": "Escolha para onde o caminho {route} segue.",
+      "routerNeedsElse": "Escolha para onde seguir quando nenhum caminho atender.",
+      "operatorNeedsNumber": "Para comparar maior ou menor, o valor precisa ser um número."
     },
     "automations": {
       "needsStep": "automações ativas precisam de pelo menos uma etapa",
@@ -2959,7 +3005,17 @@
       "startGroup": "Fluxos não rodam em grupos.",
       "startInactive": "Esse fluxo não está ativo.",
       "startAlreadyInFlow": "Esse contato já está em um fluxo. Espere terminar ou pause o fluxo atual.",
-      "startFailed": "Não foi possível iniciar o fluxo."
+      "startFailed": "Não foi possível iniciar o fluxo.",
+      "copySuffix": "(cópia)",
+      "importTooLarge": "Arquivo grande demais (máximo 512 KB).",
+      "import": {
+        "not_a_flow": "Esse arquivo não é um fluxo exportado do LabCRM.",
+        "unsupported_version": "Esse arquivo foi feito por uma versão mais nova do LabCRM.",
+        "too_many_nodes": "O fluxo tem blocos demais (máximo 200).",
+        "bad_node": "O arquivo tem um bloco inválido.",
+        "duplicate_node": "O arquivo tem dois blocos com o mesmo id.",
+        "bad_trigger": "O arquivo tem um gatilho inválido."
+      }
     },
     "quickReplies": {
       "kindInvalid": "O tipo deve ser \"text\" ou \"interactive\"",

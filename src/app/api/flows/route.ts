@@ -4,6 +4,17 @@ import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { getFlowTemplate } from '@/lib/flows/templates'
 import { getT } from '@/lib/i18n/translate'
+import {
+  MAX_IMPORT_BYTES,
+  buildFlowExport,
+  clearForeignRefs,
+  collectRefs,
+  copyName,
+  emptyRefs,
+  parseFlowImport,
+  type AccountRefs,
+  type PortableFlow,
+} from '@/lib/flows/portable'
 
 const t = getT('Api')
 
@@ -93,6 +104,10 @@ export async function POST(request: Request) {
          * provided.
          */
         template_slug?: string
+        /** Copy one of the caller's flows as a new draft ("Duplicar"). */
+        duplicate_of?: string
+        /** A file made by "Exportar", possibly from another account. */
+        import?: unknown
       }
     | null
   if (!body) {
@@ -100,6 +115,43 @@ export async function POST(request: Request) {
   }
 
   const admin = supabaseAdmin()
+
+  // -------- Duplicate path --------
+  if (body.duplicate_of) {
+    // Read through the RLS client so only the caller's own flows can
+    // be copied.
+    const [{ data: source }, { data: sourceNodes }] = await Promise.all([
+      supabase.from('flows').select('*').eq('id', body.duplicate_of).maybeSingle(),
+      supabase
+        .from('flow_nodes')
+        .select('node_key, node_type, config, position_x, position_y')
+        .eq('flow_id', body.duplicate_of)
+        .order('created_at', { ascending: true }),
+    ])
+    if (!source) {
+      return NextResponse.json({ error: t('common.notFound') }, { status: 404 })
+    }
+    const data = buildFlowExport(source, sourceNodes ?? [])
+    data.flow.name = copyName(source.name, t('flows.copySuffix'))
+    return insertPortable(admin, userId, accountId, data, 0)
+  }
+
+  // -------- Import path --------
+  if (body.import !== undefined) {
+    if (JSON.stringify(body.import).length > MAX_IMPORT_BYTES) {
+      return NextResponse.json({ error: t('flows.importTooLarge') }, { status: 413 })
+    }
+    const parsed = parseFlowImport(body.import)
+    if (!parsed.ok) {
+      return NextResponse.json(
+        { error: t(`flows.import.${parsed.error}`), code: parsed.error },
+        { status: 400 },
+      )
+    }
+    const known = await knownRefs(supabase, collectRefs(parsed.data))
+    const { data, cleared } = clearForeignRefs(parsed.data, known)
+    return insertPortable(admin, userId, accountId, data, cleared)
+  }
 
   // -------- Template clone path --------
   if (body.template_slug) {
@@ -179,4 +231,87 @@ export async function POST(request: Request) {
     )
   }
   return NextResponse.json({ flow: data }, { status: 201 })
+}
+
+type Db = Awaited<ReturnType<typeof createClient>>
+
+/**
+ * Which of the ids a file mentions exist in the caller's account. The
+ * lookups go through the RLS client, so another account's rows never
+ * count as known.
+ */
+async function knownRefs(supabase: Db, wanted: AccountRefs): Promise<AccountRefs> {
+  const known = emptyRefs()
+  const look = async (
+    table: string,
+    column: string,
+    ids: Set<string>,
+    into: Set<string>,
+  ) => {
+    // Ids come from a user file; only uuid-looking values reach the query.
+    const list = [...ids].filter((v) => /^[0-9a-f-]{36}$/i.test(v)).slice(0, 500)
+    if (list.length === 0) return
+    const { data } = await supabase.from(table).select(column).in(column, list)
+    for (const row of (data ?? []) as unknown as Array<Record<string, unknown>>) {
+      const v = row[column]
+      if (typeof v === 'string') into.add(v)
+    }
+  }
+  await Promise.all([
+    look('tags', 'id', wanted.tags, known.tags),
+    look('pipelines', 'id', wanted.pipelines, known.pipelines),
+    look('pipeline_stages', 'id', wanted.stages, known.stages),
+    look('profiles', 'user_id', wanted.users, known.users),
+    look('flows', 'id', wanted.flows, known.flows),
+    look('whatsapp_config', 'id', wanted.channels, known.channels),
+  ])
+  return known
+}
+
+/** Inserts a portable flow as a new draft, with its nodes. */
+async function insertPortable(
+  admin: ReturnType<typeof supabaseAdmin>,
+  userId: string,
+  accountId: string,
+  data: PortableFlow,
+  cleared: number,
+) {
+  const { data: flow, error: flowErr } = await admin
+    .from('flows')
+    .insert({
+      user_id: userId,
+      account_id: accountId,
+      name: data.flow.name,
+      description: data.flow.description,
+      status: 'draft',
+      trigger_type: data.flow.trigger_type,
+      trigger_config: data.flow.trigger_config,
+      entry_node_id: data.flow.entry_node_id,
+      ...(data.flow.fallback_policy ? { fallback_policy: data.flow.fallback_policy } : {}),
+    })
+    .select()
+    .single()
+  if (flowErr || !flow) {
+    return NextResponse.json(
+      { error: flowErr?.message ?? t('flows.insertFailed') },
+      { status: 500 },
+    )
+  }
+  if (data.nodes.length > 0) {
+    const { error: nodesErr } = await admin.from('flow_nodes').insert(
+      data.nodes.map((n) => ({
+        flow_id: flow.id,
+        node_key: n.node_key,
+        node_type: n.node_type,
+        config: n.config,
+        position_x: n.position_x ?? 0,
+        position_y: n.position_y ?? 0,
+      })),
+    )
+    if (nodesErr) {
+      await admin.from('flows').delete().eq('id', flow.id)
+      return NextResponse.json({ error: nodesErr.message }, { status: 500 })
+    }
+  }
+  return NextResponse.json({ flow, cleared }, { status: 201 })
 }

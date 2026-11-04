@@ -127,9 +127,15 @@ export interface CollectInputNodeConfig {
    * Format the reply must have. A reply that does not match counts as
    * an unknown reply: the prompt is sent again (fallback policy).
    */
-  validation?: "any" | "email" | "phone" | "regex";
+  validation?: "any" | "email" | "phone" | "regex" | "media";
   /** Used only when `validation === 'regex'`. */
   regex?: string;
+  /**
+   * Sent before the question is asked again when the customer answers a
+   * text question with a photo / audio and no caption. Default:
+   * DEFAULT_MEDIA_REPLY_TEXT.
+   */
+  media_reply_text?: string;
   /** Also write the captured text to this field of the contact. */
   save_to?: "name" | "email" | "company";
   /** Node to advance to after capture. */
@@ -140,7 +146,11 @@ export type ConditionOperator =
   | "equals"
   | "contains"
   | "present"
-  | "absent";
+  | "absent"
+  | "gt"
+  | "gte"
+  | "lt"
+  | "lte";
 
 export type ConditionSubject = "var" | "tag" | "contact_field" | "business_hours";
 
@@ -167,10 +177,42 @@ export interface ConditionNodeConfig {
   days?: number[];
   /** `business_hours` only: IANA time zone. Default America/Sao_Paulo. */
   timezone?: string;
+  /**
+   * More rules checked together with the one above: all of them ("e")
+   * or any of them ("ou"), per `match`.
+   */
+  extra_rules?: ConditionRule[];
+  match?: "all" | "any";
   /** Node to advance to when the predicate evaluates true. */
   true_next: string;
   /** Node to advance to when it evaluates false. */
   false_next: string;
+}
+
+/** One test of a condition or router, same fields as a condition. */
+export interface ConditionRule {
+  subject: ConditionSubject;
+  subject_key: string;
+  operator: ConditionOperator;
+  value?: string;
+  days?: number[];
+  timezone?: string;
+}
+
+/**
+ * "Vários caminhos": the routes are checked in order and the first whose
+ * rules hold wins; none → `else_next`.
+ */
+export interface RouterNodeConfig {
+  routes: Array<{
+    /** Stable id, the canvas handle is `route:<id>`. */
+    id: string;
+    label: string;
+    match: "all" | "any";
+    rules: ConditionRule[];
+    next_node_key: string;
+  }>;
+  else_next: string;
 }
 
 export interface SetTagNodeConfig {
@@ -248,6 +290,7 @@ export type FlowNodeConfig =
   | { node_type: "send_media"; config: SendMediaNodeConfig }
   | { node_type: "collect_input"; config: CollectInputNodeConfig }
   | { node_type: "condition"; config: ConditionNodeConfig }
+  | { node_type: "router"; config: RouterNodeConfig }
   | { node_type: "set_tag"; config: SetTagNodeConfig }
   | { node_type: "create_deal"; config: CreateDealNodeConfig }
   | { node_type: "wait"; config: WaitNodeConfig }
@@ -386,6 +429,15 @@ export type ParsedInbound =
       /** The user's typed message body. */
       text: string;
       /** Meta's `messages[0].id` — used for idempotency. */
+      meta_message_id: string;
+    }
+  | {
+      kind: "media";
+      /** image | video | audio | document | sticker */
+      media_kind: string;
+      /** Link the CRM keeps for the file, when there is one. */
+      media_url: string | null;
+      caption: string | null;
       meta_message_id: string;
     }
   | {

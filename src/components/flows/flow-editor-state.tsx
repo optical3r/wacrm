@@ -185,6 +185,19 @@ export function defaultConfigFor(type: NodeType): Record<string, unknown> {
         true_next: "",
         false_next: "",
       };
+    case "router":
+      return {
+        routes: [
+          {
+            id: "r1",
+            label: "",
+            match: "all",
+            rules: [{ subject: "var", subject_key: "", operator: "equals", value: "" }],
+            next_node_key: "",
+          },
+        ],
+        else_next: "",
+      };
     case "set_tag":
       return { mode: "add", tag_id: "", next_node_key: "" };
     case "create_deal":

@@ -655,6 +655,7 @@ function AddNodeButton({ onAdd, t }: { onAdd: (type: NodeType) => void; t: Retur
     'send_media',
     'collect_input',
     'condition',
+    'router',
     'set_tag',
     'create_deal',
     'wait',

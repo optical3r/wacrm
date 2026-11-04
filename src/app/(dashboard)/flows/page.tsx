@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -16,6 +16,9 @@ import {
   HelpCircle,
   UserPlus,
   FileText,
+  Copy,
+  Download,
+  Upload,
 } from "lucide-react";
 
 import { useTranslations } from "next-intl";
@@ -33,13 +36,11 @@ import {
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { MAX_IMPORT_BYTES, buildFlowExport } from "@/lib/flows/portable";
 
 /**
- * Flows list page.
- *
- * Open to every authenticated user. Flows is in soft-GA — the "Beta"
- * chip in the header is the only remaining signal that the surface
- * is new. The previous per-account beta gate was removed in PR #134.
+ * Flows list page. Open to every authenticated user; creating,
+ * duplicating and importing need the send-messages permission.
  */
 
 interface FlowRow {
@@ -93,6 +94,8 @@ export default function FlowsPage() {
   const [newName, setNewName] = useState("");
   const [creating, setCreating] = useState(false);
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
+  const [busyId, setBusyId] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -178,6 +181,80 @@ export default function FlowsPage() {
     }
   }
 
+  async function handleDuplicate(flow: FlowRow) {
+    setBusyId(flow.id);
+    try {
+      const res = await fetch("/api/flows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ duplicate_of: flow.id }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? t("duplicateError"));
+      setFlows((prev) => [json.flow as FlowRow, ...prev]);
+      toast.success(t("duplicateSuccess"));
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("duplicateError"));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleExport(flow: FlowRow) {
+    setBusyId(flow.id);
+    try {
+      const res = await fetch(`/api/flows/${flow.id}`);
+      if (!res.ok) throw new Error(`Export failed: ${res.status}`);
+      const json = await res.json();
+      const data = buildFlowExport(json.flow, json.nodes ?? []);
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${slugify(flow.name) || "fluxo"}.labcrm-flow.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error(err);
+      toast.error(t("exportError"));
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleImportFile(file: File) {
+    if (file.size > MAX_IMPORT_BYTES) {
+      toast.error(t("importTooLarge"));
+      return;
+    }
+    setCreating(true);
+    try {
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(await file.text());
+      } catch {
+        throw new Error(t("importNotJson"));
+      }
+      const res = await fetch("/api/flows", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ import: parsed }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? t("importError"));
+      toast.success(
+        json.cleared > 0 ? t("importSuccessCleared", { count: json.cleared }) : t("importSuccess"),
+      );
+      router.push(`/flows/${json.flow.id}`);
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : t("importError"));
+    } finally {
+      setCreating(false);
+    }
+  }
+
   async function handleDelete(flow: FlowRow) {
     const yes = window.confirm(t("deleteConfirm", { name: flow.name }));
     if (!yes) return;
@@ -204,24 +281,42 @@ export default function FlowsPage() {
     <div className="space-y-6 p-6">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <div className="flex items-center gap-2">
-            <h1 className="text-2xl font-semibold text-foreground">{t("title")}</h1>
-            <span className="inline-flex items-center rounded-full border border-amber-500/40 bg-amber-500/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-300">
-              {t("beta")}
-            </span>
-          </div>
+          <h1 className="text-2xl font-semibold text-foreground">{t("title")}</h1>
           <p className="mt-1 text-sm text-muted-foreground">
             {t("description")}
           </p>
         </div>
-        <GatedButton
-          canAct={canCreate}
-          gateReason={tGate("reasons.createFlows")}
-          onClick={() => setCreateOpen(true)}
-        >
-          <Plus className="h-4 w-4" />
-          {t("newFlow")}
-        </GatedButton>
+        <div className="flex items-center gap-2">
+          <input
+            ref={fileRef}
+            type="file"
+            accept=".json,application/json"
+            className="hidden"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              e.target.value = "";
+              if (file) handleImportFile(file);
+            }}
+          />
+          <GatedButton
+            variant="outline"
+            canAct={canCreate}
+            gateReason={tGate("reasons.createFlows")}
+            onClick={() => fileRef.current?.click()}
+            disabled={creating}
+          >
+            <Upload className="h-4 w-4" />
+            {t("import")}
+          </GatedButton>
+          <GatedButton
+            canAct={canCreate}
+            gateReason={tGate("reasons.createFlows")}
+            onClick={() => setCreateOpen(true)}
+          >
+            <Plus className="h-4 w-4" />
+            {t("newFlow")}
+          </GatedButton>
+        </div>
       </header>
 
       {flows.length === 0 ? (
@@ -238,6 +333,9 @@ export default function FlowsPage() {
               flow={flow}
               onEdit={() => router.push(`/flows/${flow.id}`)}
               onDelete={() => handleDelete(flow)}
+              onDuplicate={canCreate ? () => handleDuplicate(flow) : undefined}
+              onExport={() => handleExport(flow)}
+              busy={busyId === flow.id}
               t={t}
             />
           ))}
@@ -362,11 +460,17 @@ function FlowCard({
   flow,
   onEdit,
   onDelete,
+  onDuplicate,
+  onExport,
+  busy,
   t,
 }: {
   flow: FlowRow;
   onEdit: () => void;
   onDelete: () => void;
+  onDuplicate?: () => void;
+  onExport: () => void;
+  busy: boolean;
   t: ReturnType<typeof useTranslations>;
 }) {
   const triggerSummary = describeTrigger(flow, t);
@@ -408,10 +512,20 @@ function FlowCard({
         </span>
       </div>
 
-      <div className="mt-4 flex items-center justify-end gap-2 border-t border-border pt-3">
+      <div className="mt-4 flex flex-wrap items-center justify-end gap-1 border-t border-border pt-3">
         <Button variant="ghost" size="sm" onClick={onEdit}>
           <Pencil className="h-3.5 w-3.5" />
           {t("edit")}
+        </Button>
+        {onDuplicate && (
+          <Button variant="ghost" size="sm" onClick={onDuplicate} disabled={busy}>
+            <Copy className="h-3.5 w-3.5" />
+            {t("duplicate")}
+          </Button>
+        )}
+        <Button variant="ghost" size="sm" onClick={onExport} disabled={busy}>
+          <Download className="h-3.5 w-3.5" />
+          {t("export")}
         </Button>
         <Button
           variant="ghost"
@@ -439,4 +553,14 @@ function describeTrigger(flow: FlowRow, t: ReturnType<typeof useTranslations>): 
     return t("triggerFirstInbound");
   }
   return t("triggerManual");
+}
+
+function slugify(name: string): string {
+  return name
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 60);
 }

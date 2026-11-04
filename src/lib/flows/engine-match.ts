@@ -18,7 +18,7 @@ export function foldKeywordText(text: string): string {
  */
 export function isValidCollectedInput(
   text: string,
-  validation: "any" | "email" | "phone" | "regex" | undefined,
+  validation: "any" | "email" | "phone" | "regex" | "media" | undefined,
   regex?: string,
 ): boolean {
   const value = text.trim();
@@ -43,9 +43,41 @@ export function isValidCollectedInput(
       }
       return re.test(value.slice(0, 1000));
     }
+    case "media":
+      // A media answer is checked by readCollectedReply; typed text
+      // never satisfies a "send a photo / audio / file" question.
+      return false;
     default:
       return true;
   }
+}
+
+/** Default nudge when a text question gets a photo or audio. */
+export const DEFAULT_MEDIA_REPLY_TEXT = "Por favor, responda por escrito.";
+
+/**
+ * What a reply to a collect_input question gives. Text is checked
+ * against the format. Media (photo, audio, video, file, sticker) answers
+ * a "media" question with its link; for any other question its caption
+ * counts as the text, and media with no caption is flagged so the
+ * engine can ask for a written answer.
+ */
+export function readCollectedReply(
+  reply:
+    | { kind: "text"; text: string }
+    | { kind: "media"; media_kind: string; media_url?: string | null; caption?: string | null },
+  validation: "any" | "email" | "phone" | "regex" | "media" | undefined,
+  regex?: string,
+): { captured: string; valid: boolean; mediaWithoutText: boolean } {
+  if (reply.kind === "media" && validation === "media") {
+    return { captured: reply.media_url || `[${reply.media_kind}]`, valid: true, mediaWithoutText: false };
+  }
+  const captured = (reply.kind === "text" ? reply.text : reply.caption ?? "").trim();
+  return {
+    captured,
+    valid: isValidCollectedInput(captured, validation, regex),
+    mediaWithoutText: reply.kind === "media" && captured === "",
+  };
 }
 
 /** "HH:mm-HH:mm" → minutes since midnight, or null when malformed. */
@@ -135,4 +167,53 @@ export function varToText(v: unknown): string {
   if (v === undefined || v === null) return "";
   if (typeof v === "object") return JSON.stringify(v);
   return String(v);
+}
+
+/** "1.234,50", "R$ 10", "3.5" → number; null when it is not a number. */
+export function parseLooseNumber(v: string | undefined): number | null {
+  if (v === undefined) return null;
+  let s = v.replace(/[^\d,.-]/g, "");
+  if (!s || !/\d/.test(s)) return null;
+  // "1.234,50" (pt-BR) → "1234.50"; "1,5" → "1.5".
+  if (s.includes(",")) s = s.replace(/\./g, "").replace(",", ".");
+  const n = Number(s);
+  return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * The test of one rule, once its subject is known. `subject` undefined
+ * means absent (no such var, tag missing, empty field).
+ */
+export function rulePredicate(
+  operator: string | undefined,
+  subject: string | undefined,
+  value: string | undefined,
+): boolean {
+  switch (operator) {
+    case "present":
+      return subject !== undefined && subject !== "";
+    case "absent":
+      return subject === undefined || subject === "";
+    case "equals":
+      return subject !== undefined && subject === (value ?? "");
+    case "contains":
+      return subject !== undefined && subject.includes(value ?? "");
+    case "gt":
+    case "gte":
+    case "lt":
+    case "lte": {
+      const a = parseLooseNumber(subject);
+      const b = parseLooseNumber(value);
+      if (a === null || b === null) return false;
+      return operator === "gt" ? a > b : operator === "gte" ? a >= b : operator === "lt" ? a < b : a <= b;
+    }
+    default:
+      return false;
+  }
+}
+
+/** Combine rule results: all of them ("e") or any of them ("ou"). */
+export function combineRules(results: boolean[], match: "all" | "any" | undefined): boolean {
+  if (results.length === 0) return false;
+  return match === "any" ? results.some(Boolean) : results.every(Boolean);
 }

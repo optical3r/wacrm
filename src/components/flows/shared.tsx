@@ -20,6 +20,7 @@ import {
   Briefcase,
   Flag,
   Globe,
+  Split,
   Shuffle,
   Hourglass,
   GitFork,
@@ -52,6 +53,7 @@ export type NodeType =
   | 'send_media'
   | 'collect_input'
   | 'condition'
+  | 'router'
   | 'set_tag'
   | 'create_deal'
   | 'wait'
@@ -147,6 +149,12 @@ export const NODE_META: Record<
     color: 'text-fuchsia-400',
     category: 'logic',
   },
+  router: {
+    slugSeed: 'Routes',
+    icon: Split,
+    color: 'text-yellow-400',
+    category: 'logic',
+  },
   set_tag: {
     slugSeed: 'Tag contact',
     icon: Tag,
@@ -226,6 +234,7 @@ const NODE_HUE: Record<NodeType, { l: number; c: number; h: number }> = {
   send_media: { l: 0.65, c: 0.12, h: 210 }, // sky
   collect_input: { l: 0.65, c: 0.1, h: 185 }, // teal — capture
   condition: { l: 0.72, c: 0.15, h: 65 }, // amber — a fork in the road
+  router: { l: 0.74, c: 0.14, h: 85 }, // yellow — many roads
   set_tag: { l: 0.65, c: 0.15, h: 350 }, // pink
   create_deal: { l: 0.66, c: 0.15, h: 135 }, // green — money in the pipeline
   wait: { l: 0.6, c: 0.05, h: 240 }, // slate — time passing
@@ -432,13 +441,29 @@ export function summarizeNode(
               ? t ? t('opExists') : 'exists'
               : cfg.operator === 'absent'
                 ? t ? t('opMissing') : 'missing'
-                : '';
+                : cfg.operator === 'gt'
+                  ? '>'
+                  : cfg.operator === 'gte'
+                    ? '>='
+                    : cfg.operator === 'lt'
+                      ? '<'
+                      : cfg.operator === 'lte'
+                        ? '<='
+                        : '';
       const value = typeof cfg.value === 'string' ? cfg.value : '';
       const valStr =
-        (cfg.operator === 'equals' || cfg.operator === 'contains') && value
+        cfg.operator !== 'present' && cfg.operator !== 'absent' && value
           ? ` "${truncate(value, 20)}"`
           : '';
-      return subject === 'tag' ? subjectStr : `${subjectStr} ${op}${valStr}`;
+      const more = Array.isArray(cfg.extra_rules) && cfg.extra_rules.length > 0
+        ? ` ${cfg.match === 'any' ? '+ou' : '+e'} ${cfg.extra_rules.length}`
+        : '';
+      return (subject === 'tag' ? subjectStr : `${subjectStr} ${op}${valStr}`) + more;
+    }
+    case 'router': {
+      const routes = Array.isArray(cfg.routes) ? (cfg.routes as Array<{ label?: string }>) : [];
+      const labels = routes.map((r, i) => r.label?.trim() || String(i + 1));
+      return labels.length > 0 ? truncate(labels.join(' · ')) : null;
     }
     case 'set_tag': {
       const mode = cfg.mode === 'remove' ? (t ? t('modeRemove') : 'Remove') : (t ? t('modeAdd') : 'Add');

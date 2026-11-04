@@ -9,7 +9,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useTranslations } from "next-intl";
-import { FlaskConical, RotateCcw, Send } from "lucide-react";
+import { Camera, FlaskConical, RotateCcw, Send } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -63,6 +63,8 @@ function FlowSimulator({ open, onClose }: { open: boolean; onClose: () => void }
   };
   const tap = (id: string, title: string) =>
     setSim((s) => replyInSimulation(s, nodes, flow.fallback_policy, { kind: "tap", id, title }));
+  const sendPhoto = () =>
+    setSim((s) => replyInSimulation(s, nodes, flow.fallback_policy, { kind: "media" }));
   const choose = (next: string) => setSim((s) => chooseInSimulation(s, nodes, next));
 
   // Only the last bot message's options can be tapped.
@@ -86,12 +88,14 @@ function FlowSimulator({ open, onClose }: { open: boolean; onClose: () => void }
               <p className="mb-2 text-foreground">
                 {sim.choice.code === "condition"
                   ? t("askCondition", { subject: t(`subject.${sim.choice.params?.subject ?? "var"}`) })
-                  : t("askWebhook", { url: sim.choice.params?.url ?? "" })}
+                  : sim.choice.code === "router"
+                    ? t("askRouter")
+                    : t("askWebhook", { url: sim.choice.params?.url ?? "" })}
               </p>
-              <div className="flex gap-2">
-                {sim.choice.options.map((o) => (
-                  <Button key={o.code} size="sm" variant="outline" onClick={() => choose(o.next)}>
-                    {t(`choice.${o.code}`)}
+              <div className="flex flex-wrap gap-2">
+                {sim.choice.options.map((o, i) => (
+                  <Button key={i} size="sm" variant="outline" onClick={() => choose(o.next)}>
+                    {o.code === "route" ? o.label : t(`choice.${o.code}`)}
                   </Button>
                 ))}
               </div>
@@ -102,6 +106,16 @@ function FlowSimulator({ open, onClose }: { open: boolean; onClose: () => void }
         <div className="flex items-center gap-2 border-t border-border/50 p-3">
           <Button variant="ghost" size="icon-sm" onClick={restart} title={t("restart")} aria-label={t("restart")}>
             <RotateCcw className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            onClick={sendPhoto}
+            disabled={!canReply}
+            title={t("sendMedia")}
+            aria-label={t("sendMedia")}
+          >
+            <Camera className="h-4 w-4" />
           </Button>
           <Input
             value={text}
@@ -139,6 +153,7 @@ function Bubble({
     const params = { ...(bubble.params ?? {}) } as Record<string, string | number>;
     if (bubble.code === "wait_skipped") params.unit = t(`unit.${String(params.unit)}`);
     if (bubble.code === "condition_result") params.result = t(`choice.${String(params.result)}`);
+    if (bubble.code === "route_taken" && params.route === "else") params.route = t("choice.else");
     if (bubble.code === "saved_to_contact") params.field = t(`field.${String(params.field)}`);
     return (
       <p className="mx-auto max-w-[90%] rounded-md bg-background/70 px-2 py-1 text-center text-[11px] text-muted-foreground">
@@ -149,7 +164,7 @@ function Bubble({
   if (bubble.from === "customer") {
     return (
       <div className="ml-auto max-w-[80%] whitespace-pre-wrap rounded-lg rounded-tr-none bg-primary px-3 py-2 text-sm text-primary-foreground">
-        {bubble.text}
+        {bubble.media ? t("photo") : bubble.text}
       </div>
     );
   }

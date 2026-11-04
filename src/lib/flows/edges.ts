@@ -109,6 +109,35 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
         break;
       }
 
+      case "router": {
+        const routes = Array.isArray((cfg as { routes?: unknown }).routes)
+          ? ((cfg as { routes: Array<Record<string, unknown>> }).routes)
+          : [];
+        for (const r of routes) {
+          const id = typeof r.id === "string" ? r.id : null;
+          const next = typeof r.next_node_key === "string" ? r.next_node_key : null;
+          if (!id || !next || !knownKeys.has(next)) continue;
+          edges.push({
+            id: `${node.node_key}--route:${id}--${next}`,
+            source: node.node_key,
+            target: next,
+            sourceHandle: `route:${id}`,
+            label: typeof r.label === "string" && r.label ? r.label : id,
+          });
+        }
+        const elseNext = (cfg as { else_next?: string }).else_next;
+        if (elseNext && knownKeys.has(elseNext)) {
+          edges.push({
+            id: `${node.node_key}--else--${elseNext}`,
+            source: node.node_key,
+            target: elseNext,
+            sourceHandle: "else",
+            label: "else",
+          });
+        }
+        break;
+      }
+
       case "send_buttons": {
         const buttons = Array.isArray(
           (cfg as { buttons?: unknown }).buttons,
@@ -220,6 +249,21 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
         { id: "false", label: "false" },
       ];
 
+    case "router": {
+      const routes = Array.isArray((cfg as { routes?: unknown }).routes)
+        ? ((cfg as { routes: Array<Record<string, unknown>> }).routes)
+        : [];
+      return [
+        ...routes
+          .filter((r) => typeof r.id === "string" && r.id)
+          .map((r) => ({
+            id: `route:${r.id as string}`,
+            label: typeof r.label === "string" && r.label ? r.label : (r.id as string),
+          })),
+        { id: "else", label: "else" },
+      ];
+    }
+
     case "send_buttons": {
       const buttons = Array.isArray((cfg as { buttons?: unknown }).buttons)
         ? ((cfg as { buttons: Array<Record<string, unknown>> }).buttons)
@@ -301,6 +345,17 @@ export function applyEdgeConnection(
       if (sourceHandle === "true") return { true_next: targetKey };
       if (sourceHandle === "false") return { false_next: targetKey };
       return null;
+
+    case "router": {
+      if (sourceHandle === "else") return { else_next: targetKey };
+      if (!sourceHandle.startsWith("route:")) return null;
+      const id = sourceHandle.slice("route:".length);
+      const routes = Array.isArray((node.config as { routes?: unknown }).routes)
+        ? (node.config as { routes: Array<Record<string, unknown>> }).routes
+        : [];
+      if (!routes.some((r) => r.id === id)) return null;
+      return { routes: routes.map((r) => (r.id === id ? { ...r, next_node_key: targetKey } : r)) };
+    }
 
     case "send_buttons": {
       if (!sourceHandle.startsWith("button:")) return null;
@@ -417,6 +472,20 @@ function patchedConfigWithoutKey(
         ...cfg,
         ...(trueMatch ? { true_next: "" } : {}),
         ...(falseMatch ? { false_next: "" } : {}),
+      };
+    }
+
+    case "router": {
+      const routes = Array.isArray((cfg as { routes?: unknown }).routes)
+        ? (cfg as { routes: Array<Record<string, unknown>> }).routes
+        : [];
+      const elseMatch = (cfg as { else_next?: string }).else_next === deletedKey;
+      const routeMatch = routes.some((r) => r.next_node_key === deletedKey);
+      if (!elseMatch && !routeMatch) return null;
+      return {
+        ...cfg,
+        routes: routes.map((r) => (r.next_node_key === deletedKey ? { ...r, next_node_key: "" } : r)),
+        ...(elseMatch ? { else_next: "" } : {}),
       };
     }
 
