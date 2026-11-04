@@ -31,6 +31,7 @@ import {
   PanelRightClose,
   EyeOff,
   Users,
+  PenLine,
 } from "lucide-react";
 import { format, isToday, isYesterday, differenceInHours } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -184,9 +185,9 @@ export function MessageThread({
   const noServiceWindow = account?.plan === "starter";
   const tChannel = useTranslations("Inbox.channel");
 
-  // Starter accounts can have one WhatsApp number per member (migration
-  // 051). Agents always send through their own; owner / admin pick one,
-  // defaulting to the number of the agent responsible for the chat.
+  // Starter accounts can have several company numbers (migrations 051,
+  // 056). Attendants send through the numbers linked to them; owner /
+  // admin through any. Either can pick when more than one fits.
   const { channels } = useChannels(tChannel("unnamed"));
   const multiNumber = noServiceWindow && channels.length > 1;
   const [channelChoice, setChannelChoice] = useState<{ conversationId: string; channelId: string } | null>(null);
@@ -201,7 +202,7 @@ export function MessageThread({
         plan: "starter",
         role: isAgent ? "agent" : "admin",
         userId: user?.id ?? null,
-        requestedChannelId: isAgent ? null : chosenChannelId,
+        requestedChannelId: chosenChannelId,
         assignedAgentId: conversation?.assigned_agent_id ?? null,
         lastChannelId: conversation?.last_channel_id ?? null,
         groupChannelIds: isGroup ? (conversation?.channel_ids ?? []) : null,
@@ -234,7 +235,30 @@ export function MessageThread({
   ]);
   // Read by the send handlers without re-creating them on every change.
   const sendChannelIdRef = useRef<string | null>(null);
-  sendChannelIdRef.current = !isAgent && multiNumber ? (sendChannel.channel?.id ?? null) : null;
+  sendChannelIdRef.current = multiNumber ? (sendChannel.channel?.id ?? null) : null;
+  // "Assinar" (migration 056): offered when the number signs messages;
+  // the attendant can switch it off, remembered on this browser.
+  const [signOn, setSignOn] = useState(() => {
+    try {
+      return localStorage.getItem("labcrm.sign") !== "off";
+    } catch {
+      return true;
+    }
+  });
+  const canSign = Boolean(sendChannel.channel?.sign_messages);
+  const signRef = useRef(false);
+  signRef.current = canSign && signOn;
+  const toggleSign = useCallback(() => {
+    setSignOn((v) => {
+      const next = !v;
+      try {
+        localStorage.setItem("labcrm.sign", next ? "on" : "off");
+      } catch {
+        // Storage blocked: the choice just isn't remembered.
+      }
+      return next;
+    });
+  }, []);
   const channelNameById = useMemo(() => new Map(channels.map((c) => [c.id, c])), [channels]);
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
@@ -556,8 +580,9 @@ export function MessageThread({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             conversation_id: conversation.id,
-            // Owner / admin's pick on Starter; agents always use their own number.
+            // The number picked in the composer (Starter, several numbers).
             channel_id: sendChannelIdRef.current ?? undefined,
+            sign: signRef.current,
             message_type: "text",
             content_text: text,
             reply_to_message_id: replyToId,
@@ -622,8 +647,9 @@ export function MessageThread({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             conversation_id: conversation.id,
-            // Owner / admin's pick on Starter; agents always use their own number.
+            // The number picked in the composer (Starter, several numbers).
             channel_id: sendChannelIdRef.current ?? undefined,
+            sign: signRef.current,
             message_type: payload.kind,
             media_url: payload.mediaUrl,
             content_text: contentText,
@@ -683,8 +709,9 @@ export function MessageThread({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             conversation_id: conversation.id,
-            // Owner / admin's pick on Starter; agents always use their own number.
+            // The number picked in the composer (Starter, several numbers).
             channel_id: sendChannelIdRef.current ?? undefined,
+            sign: signRef.current,
             message_type: "interactive",
             interactive_payload: payload,
             reply_to_message_id: replyToId,
@@ -763,8 +790,9 @@ export function MessageThread({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             conversation_id: conversation.id,
-            // Owner / admin's pick on Starter; agents always use their own number.
+            // The number picked in the composer (Starter, several numbers).
             channel_id: sendChannelIdRef.current ?? undefined,
+            sign: signRef.current,
             message_type: "template",
             template_name: template.name,
             template_language: template.language,
@@ -970,8 +998,9 @@ export function MessageThread({
     if (!multiNumber || !msg.channel_id) return null;
     const channel = channelNameById.get(msg.channel_id);
     if (!channel) return null;
+    const soleMember = channel.member_ids.length === 1 ? channel.member_ids[0] : null;
     const sender =
-      msg.sender_type === "agent" && msg.sender_id && msg.sender_id !== channel.owner_user_id
+      msg.sender_type === "agent" && msg.sender_id && msg.sender_id !== soleMember
         ? profiles.find((p) => p.user_id === msg.sender_id)?.full_name
         : null;
     return sender
@@ -980,7 +1009,10 @@ export function MessageThread({
   };
 
   const connectedChannels = channels.filter(
-    (c) => c.status === "connected" && (!isGroup || (conversation.channel_ids ?? []).includes(c.id))
+    (c) =>
+      c.status === "connected" &&
+      (!isGroup || (conversation.channel_ids ?? []).includes(c.id)) &&
+      (!isAgent || (user?.id ? c.member_ids.includes(user.id) : false))
   );
   // Who wrote a group message: the participant's name, else their phone.
   const groupAuthorFor = (msg: Message): string | null => {
@@ -1009,11 +1041,28 @@ export function MessageThread({
       setHidingGroup(false);
     }
   };
+  const signToggle = canSign ? (
+    <button
+      type="button"
+      onClick={toggleSign}
+      aria-pressed={signOn}
+      title={tChannel("signHint")}
+      className={cn(
+        "ml-auto inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[11px]",
+        signOn
+          ? "border-primary/40 bg-primary/10 text-primary"
+          : "border-border text-muted-foreground hover:bg-muted",
+      )}
+    >
+      <PenLine className="h-3 w-3" />
+      {tChannel("sign")}
+    </button>
+  ) : null;
   const channelBar =
     multiNumber && sendChannel.channel ? (
       <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">
         <span>{tChannel("sendingBy")}</span>
-        {isAgent || connectedChannels.length < 2 ? (
+        {connectedChannels.length < 2 ? (
           <span className="font-medium text-foreground">{sendChannel.channel.name}</span>
         ) : (
           <select
@@ -1029,7 +1078,10 @@ export function MessageThread({
             ))}
           </select>
         )}
+        {signToggle}
       </div>
+    ) : signToggle ? (
+      <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">{signToggle}</div>
     ) : null;
   const assignLabel = assignedAgentId
     ? (currentAssignee?.full_name ?? t("assigned"))

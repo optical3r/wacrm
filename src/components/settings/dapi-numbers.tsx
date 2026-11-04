@@ -3,16 +3,18 @@
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
-import { Loader2, Pencil, Star, Trash2, Unplug, UserCog } from 'lucide-react';
+import { Loader2, Pencil, PlugZap, Star, Trash2, Unplug, Users } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { DapiMember, DapiNumber } from './dapi-connect';
 
 /**
- * Starter plan: the account's WhatsApp numbers, one per member. Owner
- * and admin see and manage every number; other members see their own.
+ * Starter plan: the company's WhatsApp numbers. Owner and admin see and
+ * manage every number and link any number of attendants to each one;
+ * other members see the numbers they are linked to.
  */
 export function DapiNumbers({
   numbers,
@@ -20,17 +22,21 @@ export function DapiNumbers({
   canManage,
   members = [],
   onChanged,
+  onReconnect,
 }: {
   numbers: DapiNumber[];
   maxNumbers: number;
   canManage: boolean;
-  /** Owner / admin: members a number can be linked to. */
+  /** Owner / admin: members who can be linked to a number. */
   members?: DapiMember[];
   onChanged: () => void;
+  /** Owner / admin: pair a disconnected number again. */
+  onReconnect?: (n: DapiNumber) => void;
 }) {
   const t = useTranslations('Settings.dapi');
   const [busy, setBusy] = useState<string | null>(null);
-  const [relinking, setRelinking] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [picked, setPicked] = useState<string[]>([]);
 
   async function request(id: string, init: RequestInit, url = '/api/whatsapp/dapi') {
     setBusy(id);
@@ -61,19 +67,24 @@ export function DapiNumbers({
     await patch(n, { label: answer });
   }
 
-  async function relink(n: DapiNumber, ownerUserId: string) {
-    if (!ownerUserId || ownerUserId === n.owner_user_id) {
-      setRelinking(null);
-      return;
-    }
-    if (await patch(n, { owner_user_id: ownerUserId })) {
-      setRelinking(null);
-      toast.success(t('ownerChanged'));
+  function startEditing(n: DapiNumber) {
+    setPicked(n.member_ids);
+    setEditing(n.id);
+  }
+
+  async function saveMembers(n: DapiNumber) {
+    if (await patch(n, { member_ids: picked })) {
+      setEditing(null);
+      toast.success(t('membersSaved'));
     }
   }
 
   async function toggleGroups(n: DapiNumber, on: boolean) {
     if (await patch(n, { read_groups: on })) toast.success(on ? t('groupsOnToast') : t('groupsOffToast'));
+  }
+
+  async function toggleSign(n: DapiNumber, on: boolean) {
+    if (await patch(n, { sign_messages: on })) toast.success(on ? t('signOnToast') : t('signOffToast'));
   }
 
   async function disconnect(n: DapiNumber) {
@@ -91,37 +102,96 @@ export function DapiNumbers({
   return (
     <Card>
       <CardHeader>
-        <CardTitle className="text-foreground">{t('numbersTitle')}</CardTitle>
+        <CardTitle className="text-foreground">{canManage ? t('numbersTitle') : t('numbersTitleOwn')}</CardTitle>
         <CardDescription className="text-muted-foreground">
           {canManage ? t('numbersDesc', { count: numbers.length, max: maxNumbers }) : t('numbersDescOwn')}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-2">
-        {numbers.length === 0 && <p className="text-sm text-muted-foreground">{t('noNumbers')}</p>}
+        {numbers.length === 0 && (
+          <p className="text-sm text-muted-foreground">{canManage ? t('noNumbers') : t('noLinkedNumbers')}</p>
+        )}
         {numbers.map((n) => {
-          const name = n.label || n.owner_name || t('unknownOwner');
+          const name = n.label || (n.phone ? `+${n.phone}` : t('unnamedNumber'));
           const working = busy === n.id;
-          const canEditThis = canManage || n.mine;
           return (
-            <div
-              key={n.id}
-              className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border p-3"
-            >
-              <div className="min-w-0">
-                <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
-                  {name}
-                  {n.mine && <Badge variant="outline">{t('you')}</Badge>}
-                  {n.is_default && <Badge variant="secondary">{t('defaultBadge')}</Badge>}
-                  <Badge variant={n.status === 'connected' ? 'default' : 'outline'}>
-                    {n.status === 'connected' ? t('statusConnected') : t('statusDisconnected')}
-                  </Badge>
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {n.phone ? <span className="font-mono">+{n.phone}</span> : t('noPhone')}
-                  {n.label && n.owner_name ? ` · ${t('ownerLine', { name: n.owner_name })}` : ''}
-                </p>
+            <div key={n.id} className="space-y-2 rounded-lg border border-border p-3">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="flex flex-wrap items-center gap-2 text-sm font-medium text-foreground">
+                    {name}
+                    {n.mine && canManage && <Badge variant="outline">{t('linkedToYou')}</Badge>}
+                    {n.is_default && <Badge variant="secondary">{t('defaultBadge')}</Badge>}
+                    <Badge variant={n.status === 'connected' ? 'default' : 'outline'}>
+                      {n.status === 'connected' ? t('statusConnected') : t('statusDisconnected')}
+                    </Badge>
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {n.phone ? <span className="font-mono">+{n.phone}</span> : t('noPhone')}
+                  </p>
+                  <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Users className="size-3.5 shrink-0" />
+                    {n.member_names.length > 0 ? n.member_names.join(', ') : t('noMembers')}
+                  </p>
+                  {!canManage && (n.read_groups || n.sign_messages) && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      {[n.read_groups ? t('readGroupsOn') : null, n.sign_messages ? t('signOn') : null]
+                        .filter(Boolean)
+                        .join(' · ')}
+                    </p>
+                  )}
+                </div>
                 {canManage && (
-                  <label className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+                  <div className="flex flex-wrap gap-1.5">
+                    {working && <Loader2 className="size-4 animate-spin self-center" />}
+                    <Button size="sm" variant="ghost" disabled={working} onClick={() => startEditing(n)}>
+                      <Users className="mr-1.5 size-3.5" />
+                      {t('editMembers')}
+                    </Button>
+                    <Button size="sm" variant="ghost" disabled={working} onClick={() => rename(n)}>
+                      <Pencil className="mr-1.5 size-3.5" />
+                      {t('rename')}
+                    </Button>
+                    {!n.is_default && (
+                      <Button size="sm" variant="ghost" disabled={working} onClick={() => patch(n, { is_default: true })}>
+                        <Star className="mr-1.5 size-3.5" />
+                        {t('makeDefault')}
+                      </Button>
+                    )}
+                    {n.status === 'connected' ? (
+                      <Button size="sm" variant="outline" disabled={working} onClick={() => disconnect(n)}>
+                        <Unplug className="mr-1.5 size-3.5" />
+                        {t('disconnect')}
+                      </Button>
+                    ) : (
+                      <>
+                        {onReconnect && (
+                          <Button size="sm" variant="outline" disabled={working} onClick={() => onReconnect(n)}>
+                            <PlugZap className="mr-1.5 size-3.5" />
+                            {t('reconnect')}
+                          </Button>
+                        )}
+                        <Button size="sm" variant="outline" disabled={working} onClick={() => remove(n)}>
+                          <Trash2 className="mr-1.5 size-3.5" />
+                          {t('remove')}
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {canManage && (
+                <div className="flex flex-wrap gap-x-5 gap-y-2">
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <Switch
+                      checked={n.sign_messages === true}
+                      disabled={working}
+                      onCheckedChange={(v) => void toggleSign(n, v)}
+                    />
+                    {t('signMessages')}
+                  </label>
+                  <label className="flex items-center gap-2 text-xs text-muted-foreground">
                     <Switch
                       checked={n.read_groups === true}
                       disabled={working || n.status !== 'connected'}
@@ -129,66 +199,38 @@ export function DapiNumbers({
                     />
                     {t('readGroups')}
                   </label>
-                )}
-                {!canManage && n.read_groups && (
-                  <p className="mt-1 text-xs text-muted-foreground">{t('readGroupsOn')}</p>
-                )}
-                {relinking === n.id && (
-                  <div className="mt-2 flex flex-wrap items-center gap-2">
-                    <select
-                      aria-label={t('changeOwnerLabel')}
-                      defaultValue={n.owner_user_id ?? ''}
-                      disabled={working}
-                      onChange={(e) => void relink(n, e.target.value)}
-                      className="h-8 rounded-md border border-input bg-background px-2 text-sm text-foreground"
-                    >
-                      {!n.owner_user_id && <option value="">{t('unknownOwner')}</option>}
-                      {members.map((m) => {
-                        const taken = m.user_id !== n.owner_user_id && numbers.some((x) => x.owner_user_id === m.user_id);
-                        return (
-                          <option key={m.user_id} value={m.user_id} disabled={taken}>
-                            {taken ? `${m.name} · ${t('hasNumber')}` : m.name}
-                          </option>
-                        );
-                      })}
-                    </select>
-                    <Button size="sm" variant="ghost" onClick={() => setRelinking(null)}>
+                </div>
+              )}
+
+              {canManage && editing === n.id && (
+                <div className="space-y-2 rounded-md border border-border bg-muted/30 p-3">
+                  <p className="text-xs text-muted-foreground">{t('membersHint')}</p>
+                  {members.length === 0 && <p className="text-sm text-muted-foreground">{t('noTeam')}</p>}
+                  <div className="grid gap-1.5 sm:grid-cols-2">
+                    {members.map((m) => (
+                      <label key={m.user_id} className="flex items-center gap-2 text-sm text-foreground">
+                        <Checkbox
+                          checked={picked.includes(m.user_id)}
+                          disabled={working}
+                          onCheckedChange={(v) =>
+                            setPicked((prev) =>
+                              v === true ? [...prev, m.user_id] : prev.filter((id) => id !== m.user_id),
+                            )
+                          }
+                        />
+                        <span className="truncate">{m.name}</span>
+                      </label>
+                    ))}
+                  </div>
+                  <div className="flex gap-2">
+                    <Button size="sm" disabled={working} onClick={() => void saveMembers(n)}>
+                      {working && <Loader2 className="mr-1.5 size-3.5 animate-spin" />}
+                      {t('save')}
+                    </Button>
+                    <Button size="sm" variant="ghost" disabled={working} onClick={() => setEditing(null)}>
                       {t('cancel')}
                     </Button>
                   </div>
-                )}
-              </div>
-              {canEditThis && (
-                <div className="flex flex-wrap gap-1.5">
-                  {working && <Loader2 className="size-4 animate-spin self-center" />}
-                  <Button size="sm" variant="ghost" disabled={working} onClick={() => rename(n)}>
-                    <Pencil className="mr-1.5 size-3.5" />
-                    {t('rename')}
-                  </Button>
-                  {canManage && members.length > 0 && (
-                    <Button size="sm" variant="ghost" disabled={working} onClick={() => setRelinking(n.id)}>
-                      <UserCog className="mr-1.5 size-3.5" />
-                      {t('changeOwner')}
-                    </Button>
-                  )}
-                  {canManage && !n.is_default && (
-                    <Button size="sm" variant="ghost" disabled={working} onClick={() => patch(n, { is_default: true })}>
-                      <Star className="mr-1.5 size-3.5" />
-                      {t('makeDefault')}
-                    </Button>
-                  )}
-                  {n.status === 'connected' && !n.mine && (
-                    <Button size="sm" variant="outline" disabled={working} onClick={() => disconnect(n)}>
-                      <Unplug className="mr-1.5 size-3.5" />
-                      {t('disconnect')}
-                    </Button>
-                  )}
-                  {canManage && n.status !== 'connected' && (
-                    <Button size="sm" variant="outline" disabled={working} onClick={() => remove(n)}>
-                      <Trash2 className="mr-1.5 size-3.5" />
-                      {t('remove')}
-                    </Button>
-                  )}
                 </div>
               )}
             </div>

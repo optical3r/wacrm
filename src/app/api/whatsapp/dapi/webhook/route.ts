@@ -130,7 +130,7 @@ async function applyConnection(
     // Connected while nobody had the settings page open: save it here too.
     await saveDapiConnection(admin, {
       accountId: session.account_id,
-      ownerUserId: session.owner_user_id ?? session.created_by,
+      connectedBy: session.created_by,
       sessionId: session.session_id,
       phone: connection.phone ?? null,
     })

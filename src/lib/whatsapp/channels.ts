@@ -2,18 +2,19 @@
  * WhatsApp channels: the numbers connected to an account.
  *
  * Each whatsapp_config row is a channel (migration 051). Pro accounts
- * have one (the official number). Starter accounts can have one per
- * member, each connected by QR code through D-API and owned by that
- * member. The customer keeps a single conversation; messages record the
- * channel they went through.
+ * have one (the official number). Starter accounts can have several,
+ * connected by QR code through D-API by owner / admin. The numbers are
+ * the company's: any number of attendants are linked to each one
+ * (whatsapp_channel_members, migration 056). The customer keeps a single
+ * conversation; messages record the channel they went through.
  *
  * Who sends through which number (Starter):
- *   - an `agent` always sends through their own number, never another's;
- *   - owner / admin may pick any connected number, and default to the
- *     number of the agent responsible for the chat;
+ *   - an `agent` sends through a number linked to them (the one they
+ *     pick, else the one the customer last wrote to);
+ *   - owner / admin may pick any connected number;
  *   - automated senders (flows, automations, AI, public API) use the
- *     responsible agent's number, then the last number the customer
- *     wrote to, then the account's default.
+ *     last number the customer wrote to, then a number of the
+ *     responsible attendant, then the account's default.
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js'
@@ -29,6 +30,7 @@ export interface ChannelRow {
   account_id: string
   user_id: string
   owner_user_id: string | null
+  member_ids?: string[]
   phone_number_id: string
   access_token: string
   status: string
@@ -58,7 +60,44 @@ export async function listChannels(db: Db, accountId: string, select = '*'): Pro
     console.error('[channels] list failed:', error.message)
     return []
   }
-  return sortChannels((data ?? []) as unknown as ChannelRow[])
+  const rows = (data ?? []) as unknown as ChannelRow[]
+  const members = await channelMembers(db, accountId)
+  for (const r of rows) r.member_ids = members.get(r.id) ?? []
+  return sortChannels(rows)
+}
+
+/** channel id → linked attendants (migration 056). Empty map on error. */
+export async function channelMembers(db: Db, accountId: string): Promise<Map<string, string[]>> {
+  const out = new Map<string, string[]>()
+  const { data, error } = await db
+    .from('whatsapp_channel_members')
+    .select('channel_id, user_id')
+    .eq('account_id', accountId)
+  if (error) {
+    // Before migration 056 the table does not exist yet.
+    console.warn('[channels] members load failed:', error.message)
+    return out
+  }
+  for (const row of (data ?? []) as Array<{ channel_id: string; user_id: string }>) {
+    const list = out.get(row.channel_id) ?? []
+    list.push(row.user_id)
+    out.set(row.channel_id, list)
+  }
+  return out
+}
+
+/**
+ * The one attendant linked to a number, or null when it has none or
+ * several (then nobody in particular "owns" what goes through it).
+ */
+export async function soleChannelMember(db: Db, channelId: string): Promise<string | null> {
+  const { data, error } = await db
+    .from('whatsapp_channel_members')
+    .select('user_id')
+    .eq('channel_id', channelId)
+    .limit(2)
+  if (error || !data || data.length !== 1) return null
+  return (data[0] as { user_id: string }).user_id
 }
 
 /**

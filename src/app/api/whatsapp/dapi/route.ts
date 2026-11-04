@@ -5,6 +5,7 @@ import QRCode from 'qrcode'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { hasMinRole } from '@/lib/auth/roles'
 import { markDapiDisconnected, NUMBER_LIMIT_MESSAGE, saveDapiConnection } from '@/lib/whatsapp/dapi-connection'
+import { channelMembers } from '@/lib/whatsapp/channels'
 import {
   dapiClient,
   dapiSessionIdFor,
@@ -12,29 +13,27 @@ import {
 } from '@/lib/whatsapp/dapi'
 
 /**
- * WhatsApp by QR code for the Starter plan, through D-API. Each member
- * connects their own number (up to accounts.max_numbers per account,
- * migration 051).
+ * WhatsApp by QR code for the Starter plan, through D-API. Numbers belong
+ * to the company (migration 056): only owner / admin connect, rename and
+ * remove them (up to accounts.max_numbers), and link any number of
+ * attendants to each one. Linked attendants see the number's chats and
+ * answer through it.
  *
- *   GET    → ?for=<userId> { enabled, numbers, max_numbers, members?,
- *            session } — the account's numbers (all of them for owner /
- *            admin, only the caller's for others) and one member's
- *            session: status plus, while pairing, the QR image or pair
- *            code. Once connected, saves the session as that member's
- *            number in whatsapp_config. The member is the caller, or for
- *            owner / admin whoever `for` names (they connect numbers on a
- *            member's behalf); `members` lists who can own a number.
+ *   GET    → ?session=<id> { enabled, can_manage, numbers, max_numbers,
+ *            members?, session, session_id } — the account's numbers (all
+ *            for owner / admin, the caller's linked ones for others) and,
+ *            for owner / admin, a pairing's live status: the session
+ *            named, or the latest one still pairing. While pairing it
+ *            carries the QR image or pair code; once connected the
+ *            session is saved as a number.
  *   POST   → { mode: 'qr' | 'pair', phone?, accept_risk: true,
- *            for_user_id? } starts a fresh session for the caller (agent
- *            and up), or for owner / admin on behalf of `for_user_id`.
- *            The ban-risk notice must be accepted.
- *   PATCH  → { channel_id, label?, is_default?, owner_user_id?,
- *            read_groups? } renames a number (own, or any for owner /
- *            admin), makes it the default, links it to another member or
- *            switches WhatsApp group reading on / off (owner / admin).
- *   DELETE → ?channel_id= (or ?for=) logs a number out (own, or any for
- *            owner / admin); &remove=1 also deletes a disconnected number,
- *            owner / admin only. History is kept either way.
+ *            channel_id? } starts a pairing for a new number, or to
+ *            reconnect `channel_id`. Owner / admin; the ban-risk notice
+ *            must be accepted.
+ *   PATCH  → { channel_id, label?, is_default?, read_groups?,
+ *            sign_messages?, member_ids? } owner / admin.
+ *   DELETE → ?channel_id= logs a number out; &remove=1 also deletes it.
+ *            ?session= cancels a pairing. Owner / admin; history is kept.
  *
  * DAPI_API_KEY stays on the server; the browser only sees status, the
  * QR image and the pair code.
@@ -104,14 +103,10 @@ async function enableWebhook(client: ReturnType<typeof dapiClient>, sessionId: s
   await call(client.sessions.updateIgnoreSettings(sessionId, { ignoreGroups: !readGroups, ignoreStatus: true }))
 }
 
-/** Whether the member's number reads groups (migration 052). */
-async function readsGroups(accountId: string, ownerUserId: string): Promise<boolean> {
-  const { data } = await supabaseAdmin()
-    .from('whatsapp_config')
-    .select('read_groups')
-    .eq('account_id', accountId)
-    .eq('owner_user_id', ownerUserId)
-    .maybeSingle()
+/** Whether a number reads groups (migration 052). */
+async function readsGroups(channelId: string | null): Promise<boolean> {
+  if (!channelId) return false
+  const { data } = await supabaseAdmin().from('whatsapp_config').select('read_groups').eq('id', channelId).maybeSingle()
   return (data as { read_groups?: boolean } | null)?.read_groups === true
 }
 
@@ -198,35 +193,42 @@ function phoneDigits(v: string | undefined): string | null {
   return d || null
 }
 
+
 interface NumberRow {
   id: string
-  owner_user_id: string | null
   label: string | null
   status: string
   is_default: boolean
   phone_number_id: string
   connected_at: string | null
   read_groups: boolean
+  sign_messages: boolean
 }
 
-/** The account's numbers as the settings page shows them. */
+/**
+ * The account's numbers as the settings page shows them: all of them for
+ * owner / admin, only the ones the caller is linked to for others.
+ */
 async function listNumbers(accountId: string, userId: string, all: boolean) {
   const admin = supabaseAdmin()
-  const { data: rows } = await admin
-    .from('whatsapp_config')
-    .select('id, owner_user_id, label, status, is_default, phone_number_id, connected_at, created_at, read_groups')
-    .eq('account_id', accountId)
-    .order('is_default', { ascending: false })
-    .order('created_at', { ascending: true })
-  const numbers = ((rows ?? []) as NumberRow[]).filter((r) => all || r.owner_user_id === userId)
+  const [{ data: rows }, members] = await Promise.all([
+    admin
+      .from('whatsapp_config')
+      .select('id, label, status, is_default, phone_number_id, connected_at, created_at, read_groups, sign_messages')
+      .eq('account_id', accountId)
+      .order('is_default', { ascending: false })
+      .order('created_at', { ascending: true }),
+    channelMembers(admin, accountId),
+  ])
+  const numbers = ((rows ?? []) as NumberRow[]).filter((r) => all || (members.get(r.id) ?? []).includes(userId))
   const sessionIds = numbers.map((n) => n.phone_number_id.replace(/^dapi:/, ''))
-  const ownerIds = [...new Set(numbers.map((n) => n.owner_user_id).filter(Boolean))] as string[]
+  const userIds = [...new Set(numbers.flatMap((n) => members.get(n.id) ?? []))]
   const [{ data: sessions }, { data: profiles }] = await Promise.all([
     sessionIds.length
       ? admin.from('dapi_sessions').select('session_id, phone').in('session_id', sessionIds)
       : Promise.resolve({ data: [] }),
-    ownerIds.length
-      ? admin.from('profiles').select('user_id, full_name, email').in('user_id', ownerIds)
+    userIds.length
+      ? admin.from('profiles').select('user_id, full_name, email').in('user_id', userIds)
       : Promise.resolve({ data: [] }),
   ])
   const phoneBySession = new Map(
@@ -235,25 +237,29 @@ async function listNumbers(accountId: string, userId: string, all: boolean) {
   const nameByUser = new Map(
     ((profiles ?? []) as Array<{ user_id: string; full_name: string | null; email: string | null }>).map((p) => [
       p.user_id,
-      p.full_name || p.email || null,
+      p.full_name || p.email || '',
     ]),
   )
-  return numbers.map((n) => ({
-    id: n.id,
-    label: n.label,
-    status: n.status === 'connected' ? 'connected' : 'disconnected',
-    is_default: n.is_default,
-    phone: phoneBySession.get(n.phone_number_id.replace(/^dapi:/, '')) ?? null,
-    owner_user_id: n.owner_user_id,
-    owner_name: n.owner_user_id ? nameByUser.get(n.owner_user_id) ?? null : null,
-    mine: n.owner_user_id === userId,
-    connected_at: n.connected_at,
-    read_groups: n.read_groups === true,
-  }))
+  return numbers.map((n) => {
+    const ids = members.get(n.id) ?? []
+    return {
+      id: n.id,
+      label: n.label,
+      status: n.status === 'connected' ? 'connected' : 'disconnected',
+      is_default: n.is_default,
+      phone: phoneBySession.get(n.phone_number_id.replace(/^dapi:/, '')) ?? null,
+      member_ids: ids,
+      member_names: ids.map((id) => nameByUser.get(id) || '').filter(Boolean),
+      mine: ids.includes(userId),
+      connected_at: n.connected_at,
+      read_groups: n.read_groups === true,
+      sign_messages: n.sign_messages === true,
+    }
+  })
 }
 
-/** Members who can own a number: everyone who can send (agent and up). */
-async function numberOwners(accountId: string) {
+/** Members who can be linked to a number: everyone who can send (agent and up). */
+async function linkableMembers(accountId: string) {
   const { data } = await supabaseAdmin()
     .from('profiles')
     .select('user_id, full_name, email, account_role')
@@ -265,34 +271,37 @@ async function numberOwners(accountId: string) {
   )
 }
 
-/**
- * The member a connect / status / logout call is for: the caller, or for
- * owner / admin the member they name. Null when the named user cannot
- * own a number in this account.
- */
-async function targetMember(accountId: string, userId: string, manager: boolean, requested: string | null | undefined) {
-  if (!requested || requested === userId) return userId
-  if (!manager) return null
-  const owners = await numberOwners(accountId)
-  return owners.some((o) => o.user_id === requested) ? requested : null
-}
-
-const NOT_A_MEMBER = 'Escolha um atendente desta conta (dono, admin ou atendente).'
+const NOT_A_MEMBER = 'Escolha atendentes desta conta (dono, admin ou atendente).'
 
 async function maxNumbers(accountId: string): Promise<number> {
   const { data } = await supabaseAdmin().from('accounts').select('max_numbers').eq('id', accountId).maybeSingle()
   return (data as { max_numbers?: number } | null)?.max_numbers ?? 5
 }
 
-/** The caller's own D-API session row, if any. */
-async function ownSession(accountId: string, userId: string) {
-  const { data } = await supabaseAdmin()
+interface SessionRow {
+  session_id: string
+  status: string
+  phone: string | null
+  channel_id: string | null
+}
+
+const PENDING = '(connected,disconnected)'
+
+/**
+ * The session a status call is about: the one named, or else the most
+ * recent pairing still in progress in the account (the page was reloaded
+ * mid-pairing).
+ */
+async function sessionFor(accountId: string, sessionId: string | null): Promise<SessionRow | null> {
+  let query = supabaseAdmin()
     .from('dapi_sessions')
-    .select('session_id, status, phone')
+    .select('session_id, status, phone, channel_id')
     .eq('account_id', accountId)
-    .eq('owner_user_id', userId)
-    .maybeSingle()
-  return data as { session_id: string; status: string; phone: string | null } | null
+  query = sessionId
+    ? query.eq('session_id', sessionId)
+    : query.not('status', 'in', PENDING).order('updated_at', { ascending: false }).limit(1)
+  const { data } = await query.maybeSingle()
+  return (data as SessionRow | null) ?? null
 }
 
 export async function GET(request: Request) {
@@ -300,33 +309,36 @@ export async function GET(request: Request) {
     const { accountId, userId, role, account } = await requireRole('viewer')
     if (account.plan !== 'starter') return NextResponse.json({ enabled: false })
     const manager = hasMinRole(role, 'admin')
-    const canConnect = hasMinRole(role, 'agent')
+    const [max, members] = await Promise.all([
+      maxNumbers(accountId),
+      manager ? linkableMembers(accountId) : Promise.resolve(undefined),
+    ])
     const base = {
       enabled: true,
-      can_connect: canConnect,
+      can_connect: manager,
       can_manage: manager,
-      max_numbers: await maxNumbers(accountId),
+      max_numbers: max,
+      ...(members ? { members } : {}),
     }
-    if (!hasDapiApiKey()) {
+    if (!hasDapiApiKey() || !manager) {
       return NextResponse.json({
         ...base,
-        configured: false,
+        configured: hasDapiApiKey(),
         numbers: await listNumbers(accountId, userId, manager),
-        ...(manager ? { members: await numberOwners(accountId) } : {}),
         session: null,
+        session_id: null,
       })
     }
 
-    const target = await targetMember(accountId, userId, manager, new URL(request.url).searchParams.get('for'))
-    if (!target) return NextResponse.json({ error: NOT_A_MEMBER }, { status: 400 })
-    const row = canConnect ? await ownSession(accountId, target) : null
-    const session = row ? await sessionState(request, accountId, target, row) : { session: null, sync_error: null }
+    const row = await sessionFor(accountId, new URL(request.url).searchParams.get('session'))
+    const session = row ? await sessionState(request, accountId, userId, row) : { session: null, sync_error: null }
     return NextResponse.json({
       ...base,
       configured: true,
-      target_user_id: target,
+      // Listed after the session is saved, so a just-connected number shows up.
       numbers: await listNumbers(accountId, userId, manager),
-      ...(manager ? { members: await numberOwners(accountId) } : {}),
+      session_id: session.session ? row?.session_id ?? null : null,
+      channel_id: session.session ? row?.channel_id ?? null : null,
       ...session,
     })
   } catch (err) {
@@ -334,13 +346,8 @@ export async function GET(request: Request) {
   }
 }
 
-/** Live status of a member's session; saves it as their number once connected. */
-async function sessionState(
-  request: Request,
-  accountId: string,
-  ownerUserId: string,
-  row: { session_id: string; status: string; phone: string | null },
-) {
+/** Live status of a session; saves it as a number of the account once connected. */
+async function sessionState(request: Request, accountId: string, userId: string, row: SessionRow) {
   const client = dapiClient()
   let raw: unknown
   try {
@@ -374,14 +381,14 @@ async function sessionState(
       try {
         const { url, hash } = await newWebhookUrl(siteOrigin(request))
         await supabaseAdmin().from('dapi_sessions').update({ webhook_token_hash: hash }).eq('session_id', row.session_id)
-        await enableWebhook(client, row.session_id, url, await readsGroups(accountId, ownerUserId))
+        await enableWebhook(client, row.session_id, url, await readsGroups(row.channel_id))
       } catch (err) {
         console.error('[dapi] enabling webhook failed:', (err as Error).message)
       }
     }
     syncError = await saveDapiConnection(supabaseAdmin(), {
       accountId,
-      ownerUserId,
+      connectedBy: userId,
       sessionId: row.session_id,
       phone,
     })
@@ -412,9 +419,36 @@ async function sessionState(
   }
 }
 
+/** Log a session out on D-API (best effort, 404 is fine) and forget it. */
+async function dropSession(sessionId: string) {
+  try {
+    await call(dapiClient().sessions.delete(sessionId))
+  } catch (err) {
+    if ((err as { status?: number }).status !== 404) {
+      console.warn('[dapi] dropping session failed:', (err as Error).message)
+    }
+  }
+  await supabaseAdmin().from('dapi_sessions').delete().eq('session_id', sessionId)
+}
+
+/** A number of the caller's account. */
+async function accountNumber(accountId: string, channelId: string | null | undefined) {
+  if (!channelId) return null
+  const { data } = await supabaseAdmin()
+    .from('whatsapp_config')
+    .select('id, phone_number_id, status, is_default')
+    .eq('account_id', accountId)
+    .eq('id', channelId)
+    .maybeSingle()
+  return data as { id: string; phone_number_id: string; status: string; is_default: boolean } | null
+}
+
+const NOT_FOUND = () => NextResponse.json({ error: 'Número não encontrado.' }, { status: 404 })
+
 export async function POST(request: Request) {
   try {
-    const { accountId, userId, role, account } = await requireRole('agent')
+    // Numbers belong to the company: only owner / admin connect them.
+    const { accountId, userId, account } = await requireRole('admin')
     if (account.plan !== 'starter') return NextResponse.json({ error: STARTER_ONLY }, { status: 403 })
     if (!hasDapiApiKey()) {
       return NextResponse.json({ error: 'DAPI_API_KEY não configurada no servidor.' }, { status: 400 })
@@ -424,11 +458,9 @@ export async function POST(request: Request) {
       mode?: string
       phone?: string
       accept_risk?: boolean
-      for_user_id?: string
+      /** Reconnect this number instead of adding a new one. */
+      channel_id?: string
     }
-    // Owner / admin may connect a number on a member's behalf.
-    const owner = await targetMember(accountId, userId, hasMinRole(role, 'admin'), body.for_user_id)
-    if (!owner) return NextResponse.json({ error: NOT_A_MEMBER }, { status: 400 })
     if (body.accept_risk !== true) {
       return NextResponse.json({ error: 'É preciso aceitar o aviso de risco antes de conectar.' }, { status: 400 })
     }
@@ -438,16 +470,22 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Informe o número com DDI e DDD, ex.: 5571999999999.' }, { status: 400 })
     }
 
-    // A member who has no number yet takes a new slot: check the limit
-    // before pairing, so nobody scans a QR code that cannot be saved.
     const admin = supabaseAdmin()
-    const { data: mine } = await admin
-      .from('whatsapp_config')
-      .select('id')
-      .eq('account_id', accountId)
-      .eq('owner_user_id', owner)
-      .maybeSingle()
-    if (!mine) {
+    const number = body.channel_id ? await accountNumber(accountId, body.channel_id) : null
+    if (body.channel_id && !number) return NOT_FOUND()
+
+    if (number) {
+      // Reconnecting: any half-finished pairing of this number goes.
+      const { data: old } = await admin
+        .from('dapi_sessions')
+        .select('session_id')
+        .eq('account_id', accountId)
+        .eq('channel_id', number.id)
+        .not('status', 'in', '(connected)')
+      for (const s of (old ?? []) as Array<{ session_id: string }>) await dropSession(s.session_id)
+    } else {
+      // A new number takes a slot: check the limit before pairing, so
+      // nobody scans a QR code that cannot be saved.
       const { count } = await admin
         .from('whatsapp_config')
         .select('id', { count: 'exact', head: true })
@@ -455,36 +493,22 @@ export async function POST(request: Request) {
       if ((count ?? 0) >= (await maxNumbers(accountId))) {
         return NextResponse.json({ error: NUMBER_LIMIT_MESSAGE }, { status: 400 })
       }
-    }
-
-    const client = dapiClient()
-    const previous = await ownSession(accountId, owner)
-
-    if (previous) {
-      try {
-        const current = unwrap(await call(client.sessions.get(previous.session_id)))
-        // Already connected: nothing to start, just make sure it is saved.
-        if (normalizeStatus(current.status ?? current.state) === 'connected') {
-          const phone = phoneDigits(text(current.phone))
-          const syncError = await saveDapiConnection(admin, {
-            accountId,
-            ownerUserId: owner,
-            sessionId: previous.session_id,
-            phone,
-          })
-          return NextResponse.json({ session: { status: 'connected', phone }, sync_error: syncError })
-        }
-        // A half-finished pairing: drop it and start over.
-        await call(client.sessions.delete(previous.session_id))
-      } catch (err) {
-        if ((err as { status?: number }).status !== 404) throw err
-      }
-      await admin.from('dapi_sessions').delete().eq('session_id', previous.session_id)
+      // Pairings for a new number this admin left unfinished, and anyone's
+      // that went stale, are dropped.
+      const stale = new Date(Date.now() - 30 * 60 * 1000).toISOString()
+      const { data: old } = await admin
+        .from('dapi_sessions')
+        .select('session_id')
+        .eq('account_id', accountId)
+        .is('channel_id', null)
+        .not('status', 'in', '(connected)')
+        .or(`created_by.eq.${userId},updated_at.lt.${stale}`)
+      for (const s of (old ?? []) as Array<{ session_id: string }>) await dropSession(s.session_id)
     }
 
     const sessionId = dapiSessionIdFor(accountId)
     // Reconnecting a number that reads groups keeps reading them.
-    const readGroups = await readsGroups(accountId, owner)
+    const readGroups = await readsGroups(number?.id ?? null)
 
     // A fresh secret per session; only its hash is stored.
     const hook = await newWebhookUrl(siteOrigin(request))
@@ -492,7 +516,8 @@ export async function POST(request: Request) {
 
     const { error: saveError } = await admin.from('dapi_sessions').insert({
       account_id: accountId,
-      owner_user_id: owner,
+      owner_user_id: userId,
+      channel_id: number?.id ?? null,
       session_id: sessionId,
       webhook_token_hash: hook.hash,
       status: 'connecting',
@@ -507,6 +532,7 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: 'Não foi possível salvar a sessão.' }, { status: 500 })
     }
 
+    const client = dapiClient()
     const createdRaw = await client.sessions.create({
       sessionId,
       connectionMode: mode,
@@ -527,75 +553,96 @@ export async function POST(request: Request) {
     const created = unwrap(createdRaw)
     // Fresh session: always pairing, whatever word D-API used.
     const status = normalizeStatus(created.status)
-    return NextResponse.json({ session: { status: status === 'disconnected' ? 'connecting' : status } })
+    return NextResponse.json({
+      session_id: sessionId,
+      channel_id: number?.id ?? null,
+      session: { status: status === 'disconnected' || status === 'connected' ? 'connecting' : status },
+    })
   } catch (err) {
     return dapiFailure(err)
   }
 }
 
-/** Load a number of the caller's account and check the caller may manage it. */
-async function manageableNumber(
-  accountId: string,
-  userId: string,
-  manager: boolean,
-  channelId: string | null,
-  ownerUserId: string | null = null,
-) {
-  let query = supabaseAdmin()
-    .from('whatsapp_config')
-    .select('id, owner_user_id, phone_number_id, status, is_default')
-    .eq('account_id', accountId)
-  query = channelId ? query.eq('id', channelId) : query.eq('owner_user_id', ownerUserId || userId)
-  const { data } = await query.maybeSingle()
-  const row = data as { id: string; owner_user_id: string | null; phone_number_id: string; status: string; is_default: boolean } | null
-  if (!row) return { error: NextResponse.json({ error: 'Número não encontrado.' }, { status: 404 }) }
-  if (!manager && row.owner_user_id !== userId) {
-    return { error: NextResponse.json({ error: 'Você só pode alterar o seu próprio número.' }, { status: 403 }) }
-  }
-  return { row }
-}
-
 export async function PATCH(request: Request) {
   try {
-    const { accountId, userId, role, account } = await requireRole('agent')
+    const { accountId, account } = await requireRole('admin')
     if (account.plan !== 'starter') return NextResponse.json({ error: STARTER_ONLY }, { status: 403 })
-    const manager = hasMinRole(role, 'admin')
     const body = (await request.json().catch(() => ({}))) as {
       channel_id?: string
       label?: string | null
       is_default?: boolean
-      owner_user_id?: string
       read_groups?: boolean
+      sign_messages?: boolean
+      member_ids?: unknown
     }
-    const found = await manageableNumber(accountId, userId, manager, body.channel_id ?? null)
-    if ('error' in found) return found.error
-
-    if (typeof body.owner_user_id === 'string' && body.owner_user_id !== found.row.owner_user_id) {
-      if (!manager) return NextResponse.json({ error: 'Só dono e admin trocam o atendente de um número.' }, { status: 403 })
-      const moved = await relinkNumber(accountId, found.row, body.owner_user_id)
-      if (moved) return moved
-    }
+    const number = await accountNumber(accountId, body.channel_id)
+    if (!number) return NOT_FOUND()
 
     const admin = supabaseAdmin()
+    if (body.member_ids !== undefined) {
+      const failure = await setMembers(accountId, number.id, body.member_ids)
+      if (failure) return failure
+    }
     if (typeof body.label === 'string' || body.label === null) {
       const label = typeof body.label === 'string' ? body.label.trim().slice(0, 60) || null : null
-      await admin.from('whatsapp_config').update({ label }).eq('id', found.row.id)
+      await admin.from('whatsapp_config').update({ label }).eq('id', number.id)
     }
-    if (body.is_default === true && !found.row.is_default) {
-      if (!manager) return NextResponse.json({ error: 'Só dono e admin definem o número padrão.' }, { status: 403 })
+    if (body.is_default === true && !number.is_default) {
       // One default per account (unique index): clear it first.
       await admin.from('whatsapp_config').update({ is_default: false }).eq('account_id', accountId).eq('is_default', true)
-      await admin.from('whatsapp_config').update({ is_default: true }).eq('id', found.row.id)
+      await admin.from('whatsapp_config').update({ is_default: true }).eq('id', number.id)
+    }
+    if (typeof body.sign_messages === 'boolean') {
+      await admin.from('whatsapp_config').update({ sign_messages: body.sign_messages }).eq('id', number.id)
     }
     if (typeof body.read_groups === 'boolean') {
-      if (!manager) return NextResponse.json({ error: 'Só dono e admin ligam a leitura de grupos.' }, { status: 403 })
-      const failure = await setReadGroups(found.row, body.read_groups)
+      const failure = await setReadGroups(number, body.read_groups)
       if (failure) return failure
     }
     return NextResponse.json({ ok: true })
   } catch (err) {
     return dapiFailure(err)
   }
+}
+
+/** Replace who is linked to a number (migration 056). Any number of attendants. */
+async function setMembers(accountId: string, channelId: string, raw: unknown): Promise<NextResponse | null> {
+  if (!Array.isArray(raw) || raw.some((x) => typeof x !== 'string')) {
+    return NextResponse.json({ error: NOT_A_MEMBER }, { status: 400 })
+  }
+  const wanted = [...new Set(raw as string[])]
+  const allowed = new Set((await linkableMembers(accountId)).map((m) => m.user_id))
+  if (wanted.some((id) => !allowed.has(id))) return NextResponse.json({ error: NOT_A_MEMBER }, { status: 400 })
+
+  const admin = supabaseAdmin()
+  const { data: current } = await admin
+    .from('whatsapp_channel_members')
+    .select('user_id')
+    .eq('channel_id', channelId)
+  const have = new Set(((current ?? []) as Array<{ user_id: string }>).map((r) => r.user_id))
+  const toRemove = [...have].filter((id) => !wanted.includes(id))
+  const toAdd = wanted.filter((id) => !have.has(id))
+  if (toRemove.length) {
+    const { error } = await admin
+      .from('whatsapp_channel_members')
+      .delete()
+      .eq('channel_id', channelId)
+      .in('user_id', toRemove)
+    if (error) {
+      console.error('[dapi] unlinking members failed:', error.message)
+      return NextResponse.json({ error: 'Não foi possível salvar os atendentes.' }, { status: 500 })
+    }
+  }
+  if (toAdd.length) {
+    const { error } = await admin
+      .from('whatsapp_channel_members')
+      .insert(toAdd.map((user_id) => ({ channel_id: channelId, user_id, account_id: accountId })))
+    if (error) {
+      console.error('[dapi] linking members failed:', error.message)
+      return NextResponse.json({ error: 'Não foi possível salvar os atendentes.' }, { status: 500 })
+    }
+  }
+  return null
 }
 
 /**
@@ -623,70 +670,26 @@ async function setReadGroups(
   return null
 }
 
-/**
- * Link a number to another member. Their own number (one per member)
- * would clash, so it must be removed first. Open chats the number's
- * previous member was handling through it move along with it.
- */
-async function relinkNumber(
-  accountId: string,
-  row: { id: string; owner_user_id: string | null; phone_number_id: string },
-  newOwner: string,
-): Promise<NextResponse | null> {
-  const admin = supabaseAdmin()
-  if (!(await numberOwners(accountId)).some((o) => o.user_id === newOwner)) {
-    return NextResponse.json({ error: NOT_A_MEMBER }, { status: 400 })
-  }
-  const { data: clash } = await admin
-    .from('whatsapp_config')
-    .select('id')
-    .eq('account_id', accountId)
-    .eq('owner_user_id', newOwner)
-    .maybeSingle()
-  if (clash) {
-    return NextResponse.json(
-      { error: 'Esse atendente já tem um número. Remova ou troque o número dele primeiro.' },
-      { status: 409 },
-    )
-  }
-  const { error } = await admin.from('whatsapp_config').update({ owner_user_id: newOwner }).eq('id', row.id)
-  if (error) {
-    console.error('[dapi] relink failed:', error.message)
-    return NextResponse.json({ error: 'Não foi possível trocar o atendente.' }, { status: 500 })
-  }
-  if (row.phone_number_id.startsWith('dapi:')) {
-    await admin
-      .from('dapi_sessions')
-      .update({ owner_user_id: newOwner })
-      .eq('session_id', row.phone_number_id.replace(/^dapi:/, ''))
-  }
-  if (row.owner_user_id) {
-    await admin
-      .from('conversations')
-      .update({ assigned_agent_id: newOwner })
-      .eq('account_id', accountId)
-      .eq('assigned_agent_id', row.owner_user_id)
-      .eq('last_channel_id', row.id)
-      .neq('status', 'closed')
-  }
-  return null
-}
-
 export async function DELETE(request: Request) {
   try {
-    const { accountId, userId, role } = await requireRole('agent')
-    const manager = hasMinRole(role, 'admin')
+    const { accountId } = await requireRole('admin')
     const params = new URL(request.url).searchParams
-    const found = await manageableNumber(accountId, userId, manager, params.get('channel_id'), params.get('for'))
-    if ('error' in found) return found.error
-    const remove = params.get('remove') === '1'
-    if (remove && !manager) {
-      return NextResponse.json({ error: 'Só dono e admin removem números.' }, { status: 403 })
+    const admin = supabaseAdmin()
+
+    // Cancel a pairing that has not become a number yet.
+    const pending = params.get('session')
+    if (pending) {
+      const row = await sessionFor(accountId, pending)
+      if (row && row.status !== 'connected') await dropSession(row.session_id)
+      return NextResponse.json({ ok: true })
     }
 
-    const admin = supabaseAdmin()
-    const sessionId = found.row.phone_number_id.replace(/^dapi:/, '')
-    if (found.row.phone_number_id.startsWith('dapi:') && hasDapiApiKey()) {
+    const number = await accountNumber(accountId, params.get('channel_id'))
+    if (!number) return NOT_FOUND()
+    const remove = params.get('remove') === '1'
+
+    const sessionId = number.phone_number_id.replace(/^dapi:/, '')
+    if (number.phone_number_id.startsWith('dapi:') && hasDapiApiKey()) {
       try {
         await call(dapiClient().sessions.delete(sessionId))
       } catch (err) {
@@ -697,9 +700,10 @@ export async function DELETE(request: Request) {
 
     if (remove) {
       // Frees the slot. Messages keep their text; their number tag is lost.
+      await admin.from('dapi_sessions').delete().eq('channel_id', number.id)
       await admin.from('dapi_sessions').delete().eq('session_id', sessionId)
-      await admin.from('whatsapp_config').delete().eq('id', found.row.id)
-      if (found.row.is_default) {
+      await admin.from('whatsapp_config').delete().eq('id', number.id)
+      if (number.is_default) {
         const { data: next } = await admin
           .from('whatsapp_config')
           .select('id')

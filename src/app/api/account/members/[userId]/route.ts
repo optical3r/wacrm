@@ -16,7 +16,6 @@
 
 import { NextResponse } from "next/server";
 import { supabaseAdmin } from "@/lib/flows/admin-client";
-import { logoutDapiSession } from "@/lib/whatsapp/dapi-connection";
 import type { PostgrestError } from "@supabase/supabase-js";
 
 import { requireRole, toErrorResponse } from "@/lib/auth/account";
@@ -120,10 +119,18 @@ export async function DELETE(
 
     if (error) return rpcErrorToResponse(error);
 
-    // Starter: their own WhatsApp number leaves with them. The history
-    // stays; their chats go back to "unassigned" (migration 051).
+    // Numbers are the company's (migration 056): they stay connected and
+    // the member just stops being linked to them. Their chats go back to
+    // "unassigned".
     const admin = supabaseAdmin();
-    await logoutDapiSession(admin, ctx.accountId, { ownerUserId: userId });
+    const { error: unlinkErr } = await admin
+      .from("whatsapp_channel_members")
+      .delete()
+      .eq("account_id", ctx.accountId)
+      .eq("user_id", userId);
+    if (unlinkErr) {
+      console.error("[members] unlinking numbers failed:", unlinkErr.message);
+    }
     const { error: unassignErr } = await admin
       .from("conversations")
       .update({ assigned_agent_id: null })

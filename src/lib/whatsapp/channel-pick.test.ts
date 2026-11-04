@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { pickSendChannel, type ChannelLike } from './channel-pick'
 
-const ana: ChannelLike = { id: 'ch-ana', owner_user_id: 'u-ana', status: 'connected', is_default: true, created_at: '2026-01-01' }
-const bruno: ChannelLike = { id: 'ch-bruno', owner_user_id: 'u-bruno', status: 'connected', is_default: false, created_at: '2026-01-02' }
-const carlosOff: ChannelLike = { id: 'ch-carlos', owner_user_id: 'u-carlos', status: 'disconnected', is_default: false, created_at: '2026-01-03' }
+const ana: ChannelLike = { id: 'ch-ana', member_ids: ['u-ana'], status: 'connected', is_default: true, created_at: '2026-01-01' }
+const bruno: ChannelLike = { id: 'ch-bruno', member_ids: ['u-bruno'], status: 'connected', is_default: false, created_at: '2026-01-02' }
+const carlosOff: ChannelLike = { id: 'ch-carlos', member_ids: ['u-carlos'], status: 'disconnected', is_default: false, created_at: '2026-01-03' }
 const all = [bruno, carlosOff, ana]
 
 describe('pickSendChannel — Pro', () => {
@@ -13,9 +13,17 @@ describe('pickSendChannel — Pro', () => {
 })
 
 describe('pickSendChannel — Starter agent', () => {
-  it('always sends through their own number', () => {
+  it('sends through a number linked to them', () => {
     const ch = pickSendChannel(all, { plan: 'starter', role: 'agent', userId: 'u-bruno', lastChannelId: 'ch-ana', assignedAgentId: 'u-ana' })
     expect(ch.id).toBe('ch-bruno')
+  })
+
+  it('shares a number with other attendants and prefers the one the customer used', () => {
+    const shared: ChannelLike = { id: 'ch-loja', member_ids: ['u-bruno', 'u-dani'], status: 'connected', is_default: false, created_at: '2026-01-04' }
+    const list = [...all, shared]
+    expect(pickSendChannel(list, { plan: 'starter', role: 'agent', userId: 'u-dani' }).id).toBe('ch-loja')
+    expect(pickSendChannel(list, { plan: 'starter', role: 'agent', userId: 'u-bruno', lastChannelId: 'ch-loja' }).id).toBe('ch-loja')
+    expect(pickSendChannel(list, { plan: 'starter', role: 'agent', userId: 'u-bruno', requestedChannelId: 'ch-loja' }).id).toBe('ch-loja')
   })
 
   it('refuses another member\'s number', () => {

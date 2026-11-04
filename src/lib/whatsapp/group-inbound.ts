@@ -16,6 +16,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { decrypt } from './encryption'
 import { dapiClient, hasDapiApiKey, sessionIdFrom } from './dapi'
+import { soleChannelMember } from './channels'
 import type { DapiGroupMessage } from './dapi-webhook'
 import { lookupInternalIdByMetaId, parseMessageContent } from './webhook-processor'
 
@@ -28,7 +29,6 @@ interface GroupChannel {
   id: string
   account_id: string
   user_id: string
-  owner_user_id: string | null
   read_groups: boolean
   access_token: string
   mirror_inbound_media: boolean | null
@@ -38,7 +38,7 @@ interface GroupChannel {
 async function groupChannel(admin: Admin, phoneNumberId: string): Promise<GroupChannel | null> {
   const { data } = await admin
     .from('whatsapp_config')
-    .select('id, account_id, user_id, owner_user_id, read_groups, access_token, mirror_inbound_media')
+    .select('id, account_id, user_id, read_groups, access_token, mirror_inbound_media')
     .eq('phone_number_id', phoneNumberId)
     .maybeSingle()
   const channel = data as GroupChannel | null
@@ -271,8 +271,8 @@ export async function handleDapiGroupMessages(
             reply_to_message_id: replyTo,
             interactive_reply_id: interactiveReplyId,
             channel_id: channel.id,
-            // Typed on the phone of this number's owner.
-            sender_id: m.fromMe ? channel.owner_user_id : null,
+            // Typed on the number's phone: its attendant when only one is linked.
+            sender_id: m.fromMe ? await soleChannelMember(admin, channel.id) : null,
             // Never null on a group message: it is what marks one (no notifications).
             sender_wa_id: m.senderId ?? 'unknown',
             sender_name: m.senderName ?? null,

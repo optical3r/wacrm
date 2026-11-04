@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 import { useTranslations } from 'next-intl';
-import { AlertTriangle, CheckCircle2, Loader2, QrCode, RefreshCw, Smartphone } from 'lucide-react';
+import { AlertTriangle, Loader2, QrCode, RefreshCw, Smartphone, X } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
@@ -19,12 +19,16 @@ export interface DapiNumber {
   status: 'connected' | 'disconnected';
   is_default: boolean;
   phone: string | null;
-  owner_user_id: string | null;
-  owner_name: string | null;
+  /** Attendants linked to the number (migration 056). */
+  member_ids: string[];
+  member_names: string[];
+  /** The caller is linked to it. */
   mine: boolean;
   connected_at: string | null;
   /** Reads WhatsApp groups (migration 052). */
   read_groups?: boolean;
+  /** Messages sent from the inbox start with the attendant's name. */
+  sign_messages?: boolean;
 }
 
 export interface DapiMember {
@@ -36,15 +40,16 @@ export interface DapiMember {
 export interface DapiState {
   enabled: boolean;
   configured?: boolean;
-  /** Agent and up connect their own number; owner / admin manage all. */
+  /** Owner / admin: connect and manage the company's numbers. */
   can_connect?: boolean;
   can_manage?: boolean;
   max_numbers?: number;
   numbers?: DapiNumber[];
-  /** Owner / admin: who can own a number (agent and up). */
+  /** Owner / admin: who can be linked to a number (agent and up). */
   members?: DapiMember[];
-  /** Whose session `session` describes. */
-  target_user_id?: string;
+  /** The pairing `session` describes, and the number it reconnects. */
+  session_id?: string | null;
+  channel_id?: string | null;
   session: {
     status: SessionStatus;
     phone?: string | null;
@@ -60,28 +65,31 @@ const POLL_LIMIT_MS = 5 * 60 * 1000;
 const START_GRACE_MS = 90 * 1000;
 
 /**
- * Starter plan: connect the member's own WhatsApp number by scanning a
- * QR code (or typing a pairing code), through D-API. Each member has
- * their own number (up to the account's limit). Owner / admin can also
- * connect a number on behalf of a member, picking who it is linked to.
- * The risk notice comes first — unofficial connections can get a number
- * banned.
+ * Starter plan, owner / admin: connect a company WhatsApp number by
+ * scanning a QR code (or typing a pairing code), through D-API, or
+ * reconnect one that dropped. Attendants are linked to numbers in the
+ * list below. The risk notice comes first — unofficial connections can
+ * get a number banned.
  */
 export function DapiConnect({
   initial,
-  canEdit,
-  limitReached = false,
+  reconnect = null,
   onConnected,
+  onCancelReconnect,
 }: {
   initial: DapiState;
-  canEdit: boolean;
-  /** The account has no free number slot for this member. */
-  limitReached?: boolean;
+  /** Reconnect this number instead of adding a new one. */
+  reconnect?: { id: string; name: string } | null;
   /** Gets the latest state, so a remount (the parent reloads) starts from it. */
   onConnected: (state: DapiState) => void;
+  onCancelReconnect?: () => void;
 }) {
   const t = useTranslations('Settings.dapi');
-  const [state, setState] = useState<DapiState>(initial);
+  // A pairing already running for another number is not this card's.
+  const resumable = !initial.session_id || (initial.channel_id ?? null) === (reconnect?.id ?? null);
+  const [state, setState] = useState<DapiState>(
+    resumable ? initial : { ...initial, session: null, session_id: null, sync_error: null },
+  );
   const [accepted, setAccepted] = useState(false);
   const [mode, setMode] = useState<'qr' | 'pair'>('qr');
   const [phone, setPhone] = useState('');
@@ -90,22 +98,12 @@ export function DapiConnect({
   const pollTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pollStarted = useRef(0);
   const polling = useRef(false);
-  // Whose number this card connects: the caller, or the member an owner /
-  // admin picked. A ref too, so the poll loop always asks about the
-  // current pick.
-  const [target, setTarget] = useState<string | null>(initial.target_user_id ?? null);
-  const targetRef = useRef<string | null>(target);
-  const members = state.can_manage ? state.members ?? [] : [];
-  const self = initial.target_user_id ?? null;
-  const forQuery = (id: string | null) => (id && id !== self ? `?for=${encodeURIComponent(id)}` : '');
+  // The pairing being watched: a ref, so the poll loop always asks about it.
+  const sessionRef = useRef<string | null>(resumable ? initial.session_id ?? null : null);
   const numbers = state.numbers ?? [];
-  const targetHasNumber = numbers.some((n) => n.owner_user_id === target);
-  const noSlot = state.can_manage
-    ? !targetHasNumber && numbers.length >= (state.max_numbers ?? 5)
-    : limitReached;
+  const noSlot = !reconnect && numbers.length >= (state.max_numbers ?? 5);
 
   const status = state.session?.status ?? null;
-  const connected = status === 'connected' && !state.sync_error;
   // While polling, keep the pairing panel up even if D-API briefly reports
   // the new session as disconnected (it is still starting).
   const pairing =
@@ -113,8 +111,10 @@ export function DapiConnect({
     (waiting || status === 'connecting' || status === 'qr_ready' || status === 'pair_code_ready');
 
   const refresh = useCallback(async (): Promise<DapiState | null> => {
+    const id = sessionRef.current;
+    if (!id) return null;
     try {
-      const res = await fetch(`/api/whatsapp/dapi${forQuery(targetRef.current)}`, { cache: 'no-store' });
+      const res = await fetch(`/api/whatsapp/dapi?session=${encodeURIComponent(id)}`, { cache: 'no-store' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
       setState(data);
@@ -123,7 +123,6 @@ export function DapiConnect({
       console.error('[dapi] status check failed:', err);
       return null;
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const stopPolling = useCallback(() => {
@@ -142,7 +141,11 @@ export function DapiConnect({
       if (data.sync_error) toast.error(data.sync_error);
       else {
         toast.success(t('connectedToast'));
-        onConnected(data);
+        sessionRef.current = null;
+        setAccepted(false);
+        const next = { ...data, session: null, session_id: null, channel_id: null };
+        setState(next);
+        onConnected(next);
       }
       return;
     }
@@ -170,8 +173,8 @@ export function DapiConnect({
 
   // Resume polling when the page opens mid-pairing.
   useEffect(() => {
-    const s = initial.session?.status;
-    if (canEdit && (s === 'connecting' || s === 'qr_ready' || s === 'pair_code_ready')) startPolling();
+    const s = state.session?.status;
+    if (sessionRef.current && (s === 'connecting' || s === 'qr_ready' || s === 'pair_code_ready')) startPolling();
     return () => {
       polling.current = false;
       if (pollTimer.current) clearTimeout(pollTimer.current);
@@ -189,16 +192,13 @@ export function DapiConnect({
           mode,
           phone: mode === 'pair' ? phone : undefined,
           accept_risk: accepted,
-          for_user_id: target && target !== self ? target : undefined,
+          channel_id: reconnect?.id,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      setState((prev) => ({ ...prev, session: data.session, sync_error: data.sync_error }));
-      if (data.session?.status === 'connected') {
-        if (!data.sync_error) onConnected({ ...state, session: data.session, sync_error: null });
-        return;
-      }
+      sessionRef.current = data.session_id ?? null;
+      setState((prev) => ({ ...prev, session: data.session, session_id: data.session_id, sync_error: null }));
       startPolling();
     } catch (err) {
       toast.error(err instanceof Error ? err.message : t('connectFailed'));
@@ -207,36 +207,15 @@ export function DapiConnect({
     }
   }
 
-  async function handleDisconnect() {
-    if (!window.confirm(t('disconnectConfirm'))) return;
-    setBusy(true);
-    try {
-      const res = await fetch(`/api/whatsapp/dapi${forQuery(target)}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
-      stopPolling();
-      const next: DapiState = { ...state, session: { status: 'disconnected' }, sync_error: null };
-      setState(next);
-      toast.success(t('disconnectedToast'));
-      onConnected(next);
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : t('disconnectFailed'));
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function pickTarget(id: string) {
+  async function handleCancel() {
+    const id = sessionRef.current;
     stopPolling();
-    setTarget(id);
-    targetRef.current = id;
-    setAccepted(false);
-    setState((prev) => ({ ...prev, session: null, sync_error: null }));
-    setBusy(true);
-    const data = await refresh();
-    setBusy(false);
-    const s = data?.session?.status;
-    if (s === 'connecting' || s === 'qr_ready' || s === 'pair_code_ready') startPolling();
+    sessionRef.current = null;
+    setState((prev) => ({ ...prev, session: null, session_id: null, sync_error: null }));
+    if (id) {
+      await fetch(`/api/whatsapp/dapi?session=${encodeURIComponent(id)}`, { method: 'DELETE' }).catch(() => undefined);
+    }
+    if (reconnect) onCancelReconnect?.();
   }
 
   return (
@@ -244,61 +223,17 @@ export function DapiConnect({
       <CardHeader>
         <CardTitle className="flex items-center gap-2 text-foreground">
           <QrCode className="size-5 text-primary" />
-          {members.length > 0 ? t('titleManage') : t('title')}
+          {reconnect ? t('reconnectTitle', { name: reconnect.name }) : t('titleManage')}
         </CardTitle>
         <CardDescription className="text-muted-foreground">{t('description')}</CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
-        {members.length > 0 && canEdit && (
-          <div className="space-y-1.5">
-            <Label htmlFor="dapi-owner">{t('linkTo')}</Label>
-            <select
-              id="dapi-owner"
-              value={target ?? ''}
-              disabled={busy}
-              onChange={(e) => void pickTarget(e.target.value)}
-              className="h-9 w-full rounded-md border border-input bg-background px-3 text-sm text-foreground"
-            >
-              {members.map((m) => {
-                const has = numbers.some((n) => n.owner_user_id === m.user_id);
-                const name = m.user_id === self ? t('memberYou', { name: m.name }) : m.name;
-                return (
-                  <option key={m.user_id} value={m.user_id}>
-                    {has ? `${name} · ${t('hasNumber')}` : name}
-                  </option>
-                );
-              })}
-            </select>
-            <p className="text-xs text-muted-foreground">{t('linkToHint')}</p>
-          </div>
-        )}
-
         {state.configured === false && (
           <Alert>
             <AlertTriangle className="size-4" />
             <AlertTitle>{t('notConfiguredTitle')}</AlertTitle>
             <AlertDescription>{t('notConfiguredDesc')}</AlertDescription>
           </Alert>
-        )}
-
-        {connected && (
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-primary/40 bg-primary-soft p-4">
-            <div className="flex items-center gap-3">
-              <CheckCircle2 className="size-5 shrink-0 text-primary" />
-              <div>
-                <p className="text-sm font-medium text-foreground">{t('connected')}</p>
-                {state.session?.phone && (
-                  <p className="font-mono text-sm text-muted-foreground">+{state.session.phone}</p>
-                )}
-              </div>
-            </div>
-            {canEdit && (
-              <Button variant="outline" onClick={handleDisconnect} disabled={busy}>
-                {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
-                {t('disconnect')}
-              </Button>
-            )}
-          </div>
         )}
 
         {status === 'connected' && state.sync_error && (
@@ -308,7 +243,7 @@ export function DapiConnect({
           </Alert>
         )}
 
-        {status === 'disconnected' && (
+        {status === 'disconnected' && !pairing && (
           <Alert>
             <AlertTriangle className="size-4" />
             <AlertTitle>{t('disconnectedTitle')}</AlertTitle>
@@ -316,7 +251,7 @@ export function DapiConnect({
           </Alert>
         )}
 
-        {canEdit && pairing && (
+        {pairing && (
           <div className="space-y-3 rounded-lg border border-border p-4">
             {state.session?.qr_image ? (
               <div className="flex flex-col items-center gap-3">
@@ -341,16 +276,20 @@ export function DapiConnect({
                 {t('preparing')}
               </div>
             )}
-            <div className="flex justify-center">
+            <div className="flex flex-wrap justify-center gap-2">
               <Button variant="outline" size="sm" onClick={() => (waiting ? undefined : startPolling())} disabled={waiting}>
                 {waiting ? <Loader2 className="mr-2 size-4 animate-spin" /> : <RefreshCw className="mr-2 size-4" />}
                 {waiting ? t('waiting') : t('checkAgain')}
+              </Button>
+              <Button variant="ghost" size="sm" onClick={() => void handleCancel()}>
+                <X className="mr-2 size-4" />
+                {t('cancel')}
               </Button>
             </div>
           </div>
         )}
 
-        {!connected && !pairing && canEdit && noSlot && (
+        {!pairing && noSlot && (
           <Alert>
             <AlertTriangle className="size-4" />
             <AlertTitle>{t('limitTitle')}</AlertTitle>
@@ -358,7 +297,7 @@ export function DapiConnect({
           </Alert>
         )}
 
-        {!connected && !pairing && canEdit && !noSlot && (
+        {!pairing && !noSlot && (
           <div className="space-y-4">
             <Alert>
               <AlertTriangle className="size-4" />
@@ -398,14 +337,19 @@ export function DapiConnect({
               </div>
             )}
 
-            <Button onClick={handleConnect} disabled={busy || !accepted || state.configured === false}>
-              {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
-              {status === 'disconnected' ? t('reconnect') : t('connect')}
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button onClick={handleConnect} disabled={busy || !accepted || state.configured === false}>
+                {busy && <Loader2 className="mr-2 size-4 animate-spin" />}
+                {reconnect ? t('reconnect') : t('connect')}
+              </Button>
+              {reconnect && (
+                <Button variant="ghost" onClick={() => onCancelReconnect?.()}>
+                  {t('cancel')}
+                </Button>
+              )}
+            </div>
           </div>
         )}
-
-        {!connected && !canEdit && <p className="text-sm text-muted-foreground">{t('adminOnly')}</p>}
       </CardContent>
     </Card>
   );

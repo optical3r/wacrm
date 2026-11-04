@@ -10,10 +10,14 @@ export interface InboxChannel {
   label: string | null;
   owner_user_id: string | null;
   owner_name: string | null;
+  /** Attendants linked to the number (migration 056). */
+  member_ids: string[];
+  /** Inbox messages through this number start with the attendant's name. */
+  sign_messages: boolean;
   status: string;
   is_default: boolean;
   created_at: string | null;
-  /** label, else the owner's name, else a generic name — never empty. */
+  /** label, else the only linked attendant's name, else a generic name — never empty. */
   name: string;
 }
 
@@ -35,16 +39,28 @@ export function useChannels(fallbackName: string) {
     (async () => {
       const { data: rows, error } = await supabase
         .from("whatsapp_config")
-        .select("id, label, owner_user_id, status, is_default, created_at")
+        .select("id, label, owner_user_id, status, is_default, created_at, sign_messages")
         .eq("account_id", accountId);
+      const { data: memberRows } = await supabase
+        .from("whatsapp_channel_members")
+        .select("channel_id, user_id")
+        .eq("account_id", accountId);
+      const membersOf = new Map<string, string[]>();
+      for (const m of (memberRows ?? []) as Array<{ channel_id: string; user_id: string }>) {
+        membersOf.set(m.channel_id, [...(membersOf.get(m.channel_id) ?? []), m.user_id]);
+      }
       if (cancelled) return;
       if (error) {
         console.error("[channels] load failed:", error.message);
         setLoaded(true);
         return;
       }
-      const list = (rows ?? []) as Omit<InboxChannel, "owner_name" | "name">[];
-      const ownerIds = [...new Set(list.map((c) => c.owner_user_id).filter(Boolean))] as string[];
+      const list = ((rows ?? []) as Omit<InboxChannel, "owner_name" | "name" | "member_ids">[]).map((c) => ({
+        ...c,
+        sign_messages: c.sign_messages === true,
+        member_ids: membersOf.get(c.id) ?? [],
+      }));
+      const ownerIds = [...new Set(list.flatMap((c) => c.member_ids))];
       const names = new Map<string, string>();
       if (ownerIds.length) {
         const { data: people } = await supabase
@@ -59,7 +75,7 @@ export function useChannels(fallbackName: string) {
       setChannels(
         sortChannels(
           list.map((c) => {
-            const ownerName = c.owner_user_id ? names.get(c.owner_user_id) || null : null;
+            const ownerName = c.member_ids.length === 1 ? names.get(c.member_ids[0]) || null : null;
             return { ...c, owner_name: ownerName, name: c.label || ownerName || fallbackName };
           }),
         ),

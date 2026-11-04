@@ -66,6 +66,7 @@ type WabaSubscription = {
 
 export function WhatsAppConfig() {
   const t = useTranslations('Settings.whatsapp');
+  const tDapi = useTranslations('Settings.dapi');
   const supabase = createClient();
   // After multi-user, whatsapp_config is one-row-per-account, not
   // one-row-per-user. We pull `accountId` straight off the auth
@@ -109,6 +110,8 @@ export function WhatsAppConfig() {
   // server says which mode it runs in.
   const [coexy, setCoexy] = useState<CoexyState | null>(null);
   const [dapi, setDapi] = useState<DapiState | null>(null);
+  // Owner / admin: the disconnected number being paired again.
+  const [dapiReconnect, setDapiReconnect] = useState<{ id: string; name: string } | null>(null);
 
   const [phoneNumberId, setPhoneNumberId] = useState('');
   const [wabaId, setWabaId] = useState('');
@@ -555,33 +558,43 @@ export function WhatsAppConfig() {
         })
         .catch(() => undefined);
     const numbers = dapi.numbers ?? [];
-    const hasOwn = numbers.some((n) => n.mine);
-    const limitReached = !hasOwn && numbers.length >= (dapi.max_numbers ?? 5);
+    const manage = dapi.can_manage ?? false;
     return (
       <section className="animate-in fade-in-50 duration-200">
         <SettingsPanelHead title={t("title")} description={t("description")} />
         <div className="max-w-2xl space-y-4">
-          <DapiConnect
-            initial={dapi}
-            canEdit={dapi.can_connect ?? canEditSettings}
-            limitReached={limitReached}
-            onConnected={(latest) => {
-              // The reload below may remount this card: start it from the
-              // latest state, not the QR it was first given.
-              setDapi((prev) => ({ ...(prev ?? latest), ...latest }));
-              void reloadDapi();
-              if (accountId) fetchConfig(accountId);
+          {manage ? (
+            <DapiConnect
+              key={dapiReconnect?.id ?? "new"}
+              initial={dapi}
+              reconnect={dapiReconnect}
+              onCancelReconnect={() => setDapiReconnect(null)}
+              onConnected={(latest) => {
+                // The reload below may remount this card: start it from the
+                // latest state, not the QR it was first given.
+                setDapi((prev) => ({ ...(prev ?? latest), ...latest }));
+                setDapiReconnect(null);
+                void reloadDapi();
+                if (accountId) fetchConfig(accountId);
+              }}
+            />
+          ) : (
+            <Alert>
+              <AlertTitle>{tDapi("companyNumbersTitle")}</AlertTitle>
+              <AlertDescription>{tDapi("companyNumbersDesc")}</AlertDescription>
+            </Alert>
+          )}
+          <DapiNumbers
+            numbers={numbers}
+            maxNumbers={dapi.max_numbers ?? 5}
+            canManage={manage}
+            members={dapi.members}
+            onChanged={() => void reloadDapi()}
+            onReconnect={(n) => {
+              setDapiReconnect({ id: n.id, name: n.label || (n.phone ? `+${n.phone}` : tDapi("unnamedNumber")) });
+              window.scrollTo({ top: 0, behavior: "smooth" });
             }}
           />
-          {(numbers.length > 0 || dapi.can_manage) && (
-            <DapiNumbers
-              numbers={numbers}
-              maxNumbers={dapi.max_numbers ?? 5}
-              canManage={dapi.can_manage ?? false}
-              members={dapi.members}
-              onChanged={() => void reloadDapi()}
-            />
-          )}
           {dapi.can_manage && <DapiHiddenGroups />}
         </div>
       </section>

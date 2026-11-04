@@ -8,7 +8,8 @@ import type { AccountRole } from '@/lib/auth/roles'
 /** The whatsapp_config fields the rules read. */
 export interface ChannelLike {
   id: string
-  owner_user_id: string | null
+  /** Attendants linked to the number (migration 056). */
+  member_ids?: string[] | null
   status: string
   is_default: boolean
   created_at?: string | null
@@ -33,11 +34,11 @@ export class ChannelError extends Error {
 
 const MESSAGES: Record<ChannelErrorCode, string> = {
   whatsapp_not_configured: 'WhatsApp not configured. Please set up your WhatsApp integration first.',
-  no_own_channel: 'Conecte o seu WhatsApp em Configurações para responder.',
+  no_own_channel: 'Você ainda não está vinculado a nenhum número. Peça ao administrador da conta.',
   channel_disconnected: 'Este número está desconectado. Reconecte o WhatsApp para enviar.',
-  channel_forbidden: 'Você só pode enviar pelo seu próprio número.',
+  channel_forbidden: 'Você só pode enviar pelos números vinculados a você.',
   channel_not_found: 'Número não encontrado nesta conta.',
-  not_in_group: 'O seu número não está neste grupo. Só quem está no grupo pode responder.',
+  not_in_group: 'Nenhum dos seus números está neste grupo. Só quem está no grupo pode responder.',
 }
 
 export function channelError(code: ChannelErrorCode): ChannelError {
@@ -74,6 +75,11 @@ export interface PickContext {
 
 const isConnected = (c: Pick<ChannelLike, 'status'>) => c.status === 'connected'
 
+/** Whether the member is linked to the number. */
+export function isChannelMember(c: Pick<ChannelLike, 'member_ids'>, userId?: string | null): boolean {
+  return Boolean(userId && c.member_ids?.includes(userId))
+}
+
 /**
  * Choose the channel a send goes through. Pure; throws ChannelError.
  */
@@ -85,8 +91,8 @@ export function pickSendChannel<T extends ChannelLike>(channels: T[], ctx: PickC
   if (inGroup) {
     if (sorted.length === 0) throw channelError('not_in_group')
     if (ctx.requestedChannelId && !inGroup.has(ctx.requestedChannelId)) throw channelError('not_in_group')
-    if (ctx.role === 'agent' && !sorted.some((c) => c.owner_user_id && c.owner_user_id === ctx.userId)) {
-      throw channelError(all.some((c) => c.owner_user_id === ctx.userId) ? 'not_in_group' : 'no_own_channel')
+    if (ctx.role === 'agent' && !sorted.some((c) => isChannelMember(c, ctx.userId))) {
+      throw channelError(all.some((c) => isChannelMember(c, ctx.userId)) ? 'not_in_group' : 'no_own_channel')
     }
   }
 
@@ -94,11 +100,20 @@ export function pickSendChannel<T extends ChannelLike>(channels: T[], ctx: PickC
   if (ctx.plan !== 'starter') return sorted[0]
 
   if (ctx.role === 'agent') {
-    const own = sorted.find((c) => c.owner_user_id && c.owner_user_id === ctx.userId)
-    if (ctx.requestedChannelId && ctx.requestedChannelId !== own?.id) throw channelError('channel_forbidden')
-    if (!own) throw channelError('no_own_channel')
-    if (!isConnected(own)) throw channelError('channel_disconnected')
-    return own
+    // An attendant answers through the numbers linked to them: the one
+    // they chose, else the one the customer last wrote to, else the first.
+    const mine = sorted.filter((c) => isChannelMember(c, ctx.userId))
+    if (mine.length === 0) throw channelError('no_own_channel')
+    if (ctx.requestedChannelId) {
+      const chosen = mine.find((c) => c.id === ctx.requestedChannelId)
+      if (!chosen) throw channelError('channel_forbidden')
+      if (!isConnected(chosen)) throw channelError('channel_disconnected')
+      return chosen
+    }
+    const live = mine.filter(isConnected)
+    const pick = live.find((c) => c.id === ctx.lastChannelId) ?? live[0]
+    if (!pick) throw channelError('channel_disconnected')
+    return pick
   }
 
   if (ctx.requestedChannelId) {
@@ -109,11 +124,15 @@ export function pickSendChannel<T extends ChannelLike>(channels: T[], ctx: PickC
   }
 
   const connected = sorted.filter(isConnected)
-  const byOwner = (uid?: string | null) => (uid ? connected.find((c) => c.owner_user_id === uid) : undefined)
+  const last = connected.find((c) => c.id === ctx.lastChannelId)
+  const ofMember = (uid?: string | null) => connected.find((c) => isChannelMember(c, uid))
+  // The number the customer last wrote to, unless the responsible
+  // attendant is not linked to it.
   const pick =
-    byOwner(ctx.assignedAgentId) ??
-    connected.find((c) => c.id === ctx.lastChannelId) ??
-    byOwner(ctx.userId) ??
+    (last && (!ctx.assignedAgentId || isChannelMember(last, ctx.assignedAgentId)) ? last : undefined) ??
+    ofMember(ctx.assignedAgentId) ??
+    last ??
+    ofMember(ctx.userId) ??
     connected[0]
   if (pick) return pick
   throw channelError(sorted.length ? 'channel_disconnected' : 'whatsapp_not_configured')

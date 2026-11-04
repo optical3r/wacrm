@@ -19,6 +19,7 @@
 // without duplicating ~250 lines of Meta plumbing.
 // ============================================================
 
+import { signText } from './signature';
 import type { SupabaseClient } from '@supabase/supabase-js';
 
 import {
@@ -94,6 +95,11 @@ export interface SendMessageParams {
   senderRole?: AccountRole | null;
   /** Number chosen in the composer (owner / admin on Starter). */
   channelId?: string | null;
+  /**
+   * Inbox "Assinar" toggle: prefix the text (or caption) with the
+   * sender's name when the number has sign_messages on (migration 056).
+   */
+  sign?: boolean;
 }
 
 export interface SendMessageResult {
@@ -198,7 +204,6 @@ export async function sendMessageToConversation(
   const {
     conversationId,
     messageType,
-    contentText,
     mediaUrl,
     filename,
     templateName,
@@ -210,7 +215,9 @@ export async function sendMessageToConversation(
     senderUserId,
     senderRole,
     channelId,
+    sign,
   } = params;
+  let { contentText } = params;
 
   if (!conversationId) {
     throw new SendMessageError(
@@ -285,6 +292,24 @@ export async function sendMessageToConversation(
       );
     }
     throw err;
+  }
+
+  // "Assinar" (migration 056): the attendant's name before the text.
+  if (
+    sign === true &&
+    senderUserId &&
+    config.sign_messages === true &&
+    (messageType === 'text' || (isMediaKind && messageType !== 'audio')) &&
+    typeof contentText === 'string' &&
+    contentText.trim()
+  ) {
+    const { data: me } = await db
+      .from('profiles')
+      .select('full_name')
+      .eq('user_id', senderUserId)
+      .maybeSingle();
+    const signed = signText((me as { full_name?: string | null } | null)?.full_name, contentText);
+    if (signed.length <= (messageType === 'text' ? 4096 : 1024)) contentText = signed;
   }
 
   // Self-heal legacy CBC ciphertexts. Fire-and-forget; idempotent.

@@ -18,6 +18,7 @@ import {
   verifyMetaWebhookSignature,
 } from '@/lib/whatsapp/webhook-signature'
 import { isCoexy } from '@/lib/whatsapp/provider'
+import { soleChannelMember } from '@/lib/whatsapp/channels'
 import { loadCoexyWebhookSecrets } from '@/lib/whatsapp/coexy'
 import { resumeAwaitingReply, runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
@@ -387,7 +388,7 @@ export async function processWebhook(body: { entry?: WhatsAppWebhookEntry[] }) {
           // and losing attachments is the failure mode worth avoiding.
           config.mirror_inbound_media !== false,
           // The number the customer wrote to (migration 051).
-          { id: config.id, ownerUserId: config.owner_user_id ?? null }
+          { id: config.id }
         )
       }
     }
@@ -470,9 +471,10 @@ async function handleMessageEchoes(value: MessageEchoesValue) {
           message_id: echo.id,
           status: 'sent',
           created_at: sentAt,
-          // Typed on the phone of this number's owner (migration 051).
+          // Typed on the number's phone: credited to its attendant when
+          // only one is linked (migration 056).
           channel_id: config.id,
-          sender_id: config.owner_user_id ?? null,
+          sender_id: await soleChannelMember(supabaseAdmin(), config.id),
         },
         { onConflict: 'conversation_id,message_id', ignoreDuplicates: true }
       )
@@ -1543,29 +1545,32 @@ async function findOrCreateContact(
 
 interface InboundChannel {
   id: string
-  ownerUserId: string | null
 }
 
 /**
- * Starter accounts with several numbers: a chat nobody owns goes to the
- * member whose number the customer wrote to. Skipped when the AI
- * auto-reply is on, since the bot only answers unassigned chats.
+ * Starter accounts: a chat nobody owns goes to the attendant of the
+ * number the customer wrote to, when exactly one is linked to it
+ * (migration 056). A number shared by several attendants leaves the chat
+ * unassigned for any of them to pick up. Skipped when the AI auto-reply
+ * is on, since the bot only answers unassigned chats.
  */
 async function assignToChannelOwner(
   accountId: string,
   conversation: { id: string; assigned_agent_id?: string | null },
   channel: InboundChannel
 ) {
-  if (!channel.ownerUserId || conversation.assigned_agent_id) return
+  if (conversation.assigned_agent_id) return
   try {
     const db = supabaseAdmin()
     const { data: account } = await db.from('accounts').select('plan').eq('id', accountId).maybeSingle()
     if (account?.plan !== 'starter') return
     const ai = await loadAiConfig(db, accountId)
     if (ai?.autoReplyEnabled) return
+    const attendant = await soleChannelMember(db, channel.id)
+    if (!attendant) return
     await db
       .from('conversations')
-      .update({ assigned_agent_id: channel.ownerUserId })
+      .update({ assigned_agent_id: attendant })
       .eq('id', conversation.id)
       .is('assigned_agent_id', null)
   } catch (err) {

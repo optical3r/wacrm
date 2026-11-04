@@ -62,6 +62,7 @@ export async function POST(request: Request) {
       interactive_payload,
       reply_to_message_id,
       channel_id,
+      sign,
     } = body
 
     if ((!conversationIdInput && !contact_id) || !message_type) {
@@ -173,6 +174,7 @@ export async function POST(request: Request) {
         senderUserId: userId,
         senderRole: role,
         channelId: typeof channel_id === 'string' && channel_id ? channel_id : null,
+        sign: sign === true,
       })
 
       return NextResponse.json({
