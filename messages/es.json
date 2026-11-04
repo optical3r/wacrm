@@ -223,7 +223,9 @@
       "takeLead": "Tomar este lead",
       "leaveLead": "Dejar de ser dueño",
       "ownersLocked": "Este lead ya tiene dueño. Solo el propietario o un administrador cambia los dueños.",
-      "ownersLockedShort": "Solo el admin cambia los dueños"
+      "ownersLockedShort": "Solo el admin cambia los dueños",
+      "coverLead": "Asumir junto con los dueños",
+      "coverLeadAway": "Dueños ausentes: asumir la conversación"
     },
     "sessionTimer": {
       "expired": "Expirada",

@@ -1002,6 +1002,14 @@ export function MessageThread({
     .map((id) => profiles.find((p) => p.user_id === id)?.full_name)
     .filter(Boolean) as string[];
   const isOwner = !!user?.id && ownerIds.includes(user.id);
+  // An attendant linked to a number this chat went through may join its
+  // owners, e.g. when they are away (migration 057).
+  const canCoverLead =
+    !!user?.id &&
+    channels.some(
+      (c) => (conversation.channel_ids ?? []).includes(c.id) && c.member_ids.includes(user.id as string),
+    );
+  const ownersAway = ownerIds.length > 0 && ownerIds.every((id) => getPresence(id) !== "online");
 
   // "via Ana", or "Rodrigo via Ana" when someone else answered through
   // Ana's number. Only when the account has several numbers.
@@ -1342,9 +1350,20 @@ export function MessageThread({
                     </DropdownMenuItem>
                   )}
                   {ownerIds.length > 0 && !isOwner && (
-                    <DropdownMenuItem disabled className="text-sm text-muted-foreground">
-                      {t("ownersLockedShort")}
-                    </DropdownMenuItem>
+                    canCoverLead && user?.id ? (
+                      // Linked to the chat's number: join the owners to
+                      // cover for them (they stay owners).
+                      <DropdownMenuItem
+                        onClick={() => void handleOwnersChange([...ownerIds, user.id])}
+                        className="text-sm text-popover-foreground"
+                      >
+                        {ownersAway ? t("coverLeadAway") : t("coverLead")}
+                      </DropdownMenuItem>
+                    ) : (
+                      <DropdownMenuItem disabled className="text-sm text-muted-foreground">
+                        {t("ownersLockedShort")}
+                      </DropdownMenuItem>
+                    )
                   )}
                 </>
               )}

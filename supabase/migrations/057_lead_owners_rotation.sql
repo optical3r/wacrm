@@ -5,8 +5,9 @@
 --     everything that reads it keeps working.
 --   * An owned lead is never reassigned by automations, flows, the AI
 --     handoff or the rotation, not even after the chat is closed. Only
---     owner / admin change its owners; an agent may only take a lead
---     nobody owns, or leave one they own.
+--     owner / admin change its owners; an agent may take a lead nobody
+--     owns, leave one they own, or join the owners of a lead that went
+--     through a number they are linked to (covering for absent owners).
 --   * lead_rotation: per account, on / off and the attendants it rotates
 --     between. New leads with no owner go to the next one in turn (only
 --     among those linked to the number the customer wrote to, when any
@@ -67,13 +68,24 @@ BEGIN
     GROUP BY u
   ) s;
 
-  -- An agent (not owner / admin) may only take a free lead or leave one.
+  -- An agent (not owner / admin) may only take a free lead, leave one,
+  -- or join its owners when linked to a number the chat went through
+  -- (to cover for owners who are away). Nobody else is ever removed.
   IF TG_OP = 'UPDATE'
      AND auth.uid() IS NOT NULL
      AND NEW.owner_ids IS DISTINCT FROM v_old
      AND v_old <> '{}'
      AND NOT is_account_member(NEW.account_id, 'admin')
-     AND NEW.owner_ids IS DISTINCT FROM array_remove(v_old, auth.uid()) THEN
+     AND NEW.owner_ids IS DISTINCT FROM array_remove(v_old, auth.uid())
+     AND NOT (
+       NEW.owner_ids = array_append(array_remove(v_old, auth.uid()), auth.uid())
+       AND EXISTS (
+         SELECT 1 FROM whatsapp_channel_members m
+         WHERE m.account_id = NEW.account_id
+           AND m.user_id = auth.uid()
+           AND m.channel_id = ANY(COALESCE(NEW.channel_ids, '{}'))
+       )
+     ) THEN
     RAISE EXCEPTION 'Só o proprietário e os administradores mudam os donos de um lead.'
       USING ERRCODE = '42501', HINT = 'lead_owner_locked';
   END IF;

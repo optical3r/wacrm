@@ -223,7 +223,9 @@
       "takeLead": "Take this lead",
       "leaveLead": "Stop owning it",
       "ownersLocked": "This lead already has an owner. Only the owner or an admin changes its owners.",
-      "ownersLockedShort": "Only an admin changes owners"
+      "ownersLockedShort": "Only an admin changes owners",
+      "coverLead": "Take it on with the owners",
+      "coverLeadAway": "Owners away: take over the chat"
     },
     "sessionTimer": {
       "expired": "Expired",
