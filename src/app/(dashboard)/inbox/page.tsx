@@ -538,20 +538,13 @@ function InboxPageInner() {
   );
 
   const handleAssignChange = useCallback(
-    (conversationId: string, assignedAgentId: string | null) => {
+    (conversationId: string, ownerIds: string[]) => {
+      const patch = { owner_ids: ownerIds, assigned_agent_id: ownerIds[0] ?? undefined };
       setConversations((prev) =>
-        prev.map((c) =>
-          c.id === conversationId
-            ? { ...c, assigned_agent_id: assignedAgentId ?? undefined }
-            : c
-        )
+        prev.map((c) => (c.id === conversationId ? { ...c, ...patch } : c))
       );
       if (activeConversation?.id === conversationId) {
-        setActiveConversation((prev) =>
-          prev
-            ? { ...prev, assigned_agent_id: assignedAgentId ?? undefined }
-            : prev
-        );
+        setActiveConversation((prev) => (prev ? { ...prev, ...patch } : prev));
       }
     },
     [activeConversation]

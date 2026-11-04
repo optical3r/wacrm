@@ -178,6 +178,8 @@ export interface Conversation {
   contact_id: string;
   status: ConversationStatus;
   assigned_agent_id?: string;
+  /** Lead owners, any number of them (migration 057); assigned_agent_id is the first. */
+  owner_ids?: string[];
   /** Last number the customer wrote to (migration 051, Starter). */
   last_channel_id?: string | null;
   /** Every number this chat went through (migration 051). */

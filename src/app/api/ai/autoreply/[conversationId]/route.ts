@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
+import { hasMinRole } from '@/lib/auth/roles'
 import { checkRateLimit, rateLimitResponse, RATE_LIMITS } from '@/lib/rate-limit'
 import { getT } from '@/lib/i18n/translate'
 
@@ -29,7 +30,7 @@ type Params = { params: Promise<{ conversationId: string }> }
  */
 export async function POST(request: Request, { params }: Params) {
   try {
-    const { supabase, accountId, userId } = await requireRole('agent')
+    const { supabase, accountId, userId, role } = await requireRole('agent')
 
     // Reuse the send bucket: this is a cheap per-user inbox action and
     // toggling it in a tight loop has no legitimate use.
@@ -50,7 +51,7 @@ export async function POST(request: Request, { params }: Params) {
     // Confirm the conversation is in the caller's account before writing.
     const { data: conv, error: convErr } = await supabase
       .from('conversations')
-      .select('id')
+      .select('id, owner_ids')
       .eq('id', conversationId)
       .eq('account_id', accountId)
       .maybeSingle()
@@ -67,8 +68,10 @@ export async function POST(request: Request, { params }: Params) {
 
     const update: Record<string, unknown> = { ai_autoreply_disabled: paused }
 
+    // Lead owners (migration 057): an owned lead keeps its owners.
+    const owners = ((conv as { owner_ids?: string[] | null }).owner_ids ?? []) as string[]
     if (paused) {
-      if (assignToMe) update.assigned_agent_id = userId
+      if (assignToMe && owners.length === 0) update.owner_ids = [userId]
     } else {
       // Resuming hands the thread *back to the bot*. Clear the pause and
       // the handoff note, and — crucially — release ANY assignment, not
@@ -77,7 +80,9 @@ export async function POST(request: Request, { params }: Params) {
       // (e.g. the agent a prior handoff routed to) would silently keep
       // the bot muted and make "Resume AI" a no-op. This is the explicit
       // choice to let the bot own the thread again.
-      update.assigned_agent_id = null
+      // Owner / admin release every owner; an agent can only step out
+      // themselves, so the bot stays muted while someone else owns it.
+      update.owner_ids = hasMinRole(role, 'admin') ? [] : owners.filter((id) => id !== userId)
       // Give the bot a fresh reply budget on this thread. This is a
       // deliberate, manual, rate-limited action (not automatable), so it
       // can't be used to bypass the per-conversation cap at scale — it's

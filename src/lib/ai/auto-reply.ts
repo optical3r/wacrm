@@ -1,4 +1,5 @@
 import { supabaseAdmin } from './admin-client'
+import { assignByRotation } from '@/lib/conversations/owners'
 import { loadAiConfig } from './config'
 import { buildConversationContext } from './context'
 import { retrieveKnowledge } from './knowledge'
@@ -83,7 +84,7 @@ export async function dispatchInboundToAiReply(
 
     const { data: conv, error: convErr } = await db
       .from('conversations')
-      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count')
+      .select('assigned_agent_id, ai_autoreply_disabled, ai_reply_count, last_channel_id')
       .eq('id', conversationId)
       .maybeSingle()
     if (convErr || !conv) return
@@ -178,6 +179,10 @@ export async function dispatchInboundToAiReply(
         update.assigned_agent_id = config.handoffAgentId
       }
       await db.from('conversations').update(update).eq('id', conversationId)
+      // No fixed handoff agent: the account's lead rotation picks one.
+      if (!config.handoffAgentId && !conv.assigned_agent_id) {
+        await assignByRotation(db, conversationId, (conv as { last_channel_id?: string | null }).last_channel_id ?? null)
+      }
       return
     }
 

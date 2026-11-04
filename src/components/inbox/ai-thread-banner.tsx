@@ -56,9 +56,13 @@ interface AiThreadBannerProps {
   /** Called after a successful toggle so the parent can patch its local
    *  conversation state (the realtime UPDATE also arrives, but this keeps
    *  the banner instant). */
+  /** Lead owners (migration 057). */
+  ownerIds?: string[];
+  /** Owner / admin: resuming releases every owner, not just the caller. */
+  canManage?: boolean;
   onChange?: (patch: {
     ai_autoreply_disabled: boolean;
-    assigned_agent_id?: string | null;
+    owner_ids?: string[];
   }) => void;
 }
 
@@ -75,6 +79,8 @@ export function AiThreadBanner({
   disabled,
   handoffSummary,
   assignedAgentId,
+  ownerIds = [],
+  canManage = false,
   currentUserId,
   onChange,
 }: AiThreadBannerProps) {
@@ -118,11 +124,13 @@ export function AiThreadBanner({
           // Take over assigns to the acting agent; resume releases only
           // the caller's own assignment. The realtime UPDATE reconciles
           // the exact value either way.
+          // An owned lead keeps its owners on take over; resuming
+          // releases everyone (owner / admin) or just the caller.
           ...(paused
-            ? currentUserId
-              ? { assigned_agent_id: currentUserId }
+            ? currentUserId && ownerIds.length === 0
+              ? { owner_ids: [currentUserId] }
               : {}
-            : { assigned_agent_id: null }),
+            : { owner_ids: canManage ? [] : ownerIds.filter((id) => id !== currentUserId) }),
         });
         toast.success(paused ? t("tookOver") : t("resumed"));
       } catch {
@@ -131,7 +139,7 @@ export function AiThreadBanner({
         setBusy(false);
       }
     },
-    [conversationId, currentUserId, onChange, t],
+    [conversationId, currentUserId, onChange, t, ownerIds, canManage],
   );
 
   // Account has no auto-reply → nothing to show. (Still loading → nothing.)

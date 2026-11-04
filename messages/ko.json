@@ -216,7 +216,14 @@
       "assignmentUpdateFailed": "담당자 변경에 실패했습니다",
       "networkError": "네트워크 오류",
       "documentFallback": "문서",
-      "you": "나"
+      "you": "나",
+      "ownersHint": "리드 담당자 (여러 명 선택 가능)",
+      "ownersCount": "{first} 외 {count}명",
+      "ownersList": "담당자: {names}",
+      "takeLead": "이 리드 맡기",
+      "leaveLead": "담당 그만하기",
+      "ownersLocked": "이미 담당자가 있는 리드입니다. 담당자는 소유자 또는 관리자만 변경할 수 있습니다.",
+      "ownersLockedShort": "관리자만 담당자 변경 가능"
     },
     "sessionTimer": {
       "expired": "만료됨",
@@ -2232,6 +2239,25 @@
       "signOffToast": "이 번호의 서명이 꺼졌습니다.",
       "companyNumbersTitle": "번호는 회사 소유입니다",
       "companyNumbersDesc": "번호 연결은 소유자와 관리자만 할 수 있습니다. 번호로 응대하려면 연결을 요청하세요."
+    },
+    "rotation": {
+      "title": "리드 순환 배정",
+      "description": "담당자가 없는 새 리드는 이 목록의 상담원에게 차례대로 배정됩니다. 이미 담당자가 있는 리드는 대화가 종료된 후에도 그대로 유지됩니다.",
+      "on": "순환 배정 켜짐",
+      "off": "순환 배정 꺼짐",
+      "orderTitle": "순환 순서",
+      "nobody": "아직 순환 대상이 없습니다.",
+      "addTitle": "순환에 추가",
+      "nextUp": "다음",
+      "moveUp": "위로",
+      "moveDown": "아래로",
+      "remove": "순환에서 제외",
+      "rules": "고객이 상담원이 연결된 번호로 메시지를 보내면 그 상담원들 사이에서만 순환합니다. AI 자동 응답이 켜져 있으면 AI가 사람에게 대화를 넘길 때 순환 배정이 적용됩니다.",
+      "save": "순환 저장",
+      "saveFailed": "순환 배정을 저장하지 못했습니다.",
+      "savedOn": "순환 배정이 저장되고 켜졌습니다.",
+      "savedOff": "순환 배정이 저장되고 꺼졌습니다.",
+      "pickSomeone": "순환에 상담원을 한 명 이상 선택하세요."
     }
   },
   "SignupPage": {

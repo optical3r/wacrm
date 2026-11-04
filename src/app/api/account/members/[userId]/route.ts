@@ -131,11 +131,11 @@ export async function DELETE(
     if (unlinkErr) {
       console.error("[members] unlinking numbers failed:", unlinkErr.message);
     }
-    const { error: unassignErr } = await admin
-      .from("conversations")
-      .update({ assigned_agent_id: null })
-      .eq("account_id", ctx.accountId)
-      .eq("assigned_agent_id", userId);
+    // They stop owning the account's leads (migration 057).
+    const { error: unassignErr } = await admin.rpc("remove_lead_owner", {
+      p_account_id: ctx.accountId,
+      p_user_id: userId,
+    });
     if (unassignErr) {
       console.error("[members] unassigning chats failed:", unassignErr.message);
     }

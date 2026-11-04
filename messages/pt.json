@@ -216,7 +216,14 @@
       "assignmentUpdateFailed": "Falha ao atualizar a atribuição",
       "networkError": "erro de rede",
       "documentFallback": "Documento",
-      "you": "Você"
+      "you": "Você",
+      "ownersHint": "Donos do lead (pode marcar vários)",
+      "ownersCount": "{first} +{count}",
+      "ownersList": "Donos: {names}",
+      "takeLead": "Assumir este lead",
+      "leaveLead": "Deixar de ser dono",
+      "ownersLocked": "Este lead já tem dono. Só o proprietário ou um administrador muda os donos.",
+      "ownersLockedShort": "Só o admin muda os donos"
     },
     "sessionTimer": {
       "expired": "Expirada",
@@ -2232,6 +2239,25 @@
       "signOffToast": "Assinatura desligada para este número.",
       "companyNumbersTitle": "Os números são da empresa",
       "companyNumbersDesc": "Só o proprietário e os administradores conectam números. Para atender por um número, peça para ser vinculado a ele."
+    },
+    "rotation": {
+      "title": "Rodízio de leads",
+      "description": "Leads novos sem dono vão, um de cada vez, para os atendentes desta lista. Um lead que já tem dono continua com ele, mesmo depois que a conversa é fechada.",
+      "on": "Rodízio ligado",
+      "off": "Rodízio desligado",
+      "orderTitle": "Ordem do rodízio",
+      "nobody": "Ninguém no rodízio ainda.",
+      "addTitle": "Adicionar ao rodízio",
+      "nextUp": "próximo",
+      "moveUp": "Subir",
+      "moveDown": "Descer",
+      "remove": "Tirar do rodízio",
+      "rules": "Quando o cliente escreve para um número que tem atendentes vinculados, o rodízio fica só entre os desses números. Com a resposta automática por IA ligada, o rodízio entra quando a IA passa a conversa para um humano.",
+      "save": "Salvar rodízio",
+      "saveFailed": "Não foi possível salvar o rodízio.",
+      "savedOn": "Rodízio salvo e ligado.",
+      "savedOff": "Rodízio salvo e desligado.",
+      "pickSomeone": "Escolha pelo menos um atendente para o rodízio."
     }
   },
   "SignupPage": {

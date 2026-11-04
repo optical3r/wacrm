@@ -73,6 +73,7 @@ import {
   PresenceDot,
 } from '@/components/presence/presence-dot';
 import { InviteMemberDialog } from './invite-member-dialog';
+import { LeadRotation } from './lead-rotation';
 import { SettingsPanelHead } from './settings-panel-head';
 import { ROLE_META } from './role-meta';
 
@@ -127,7 +128,7 @@ function fmtExpiresIn(iso: string, t: (key: string, values?: Record<string, stri
 export function MembersTab() {
   const t = useTranslations('Settings.members');
   const tRoles = useTranslations('Settings.roles');
-  const { user, canManageMembers } = useAuth();
+  const { user, accountId, canManageMembers } = useAuth();
   const { getPresence, getRow, now } = usePresence();
 
   const [members, setMembers] = useState<Member[]>([]);
@@ -472,6 +473,10 @@ export function MembersTab() {
           </ul>
         </CardContent>
       </Card>
+
+      {accountId && members.length > 0 && (
+        <LeadRotation accountId={accountId} members={members} canEdit={canManageMembers} />
+      )}
 
       {/* Pending invitations — admin+ only */}
       <RequireRole min="admin">

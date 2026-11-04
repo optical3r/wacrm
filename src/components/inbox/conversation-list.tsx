@@ -216,14 +216,17 @@ export function ConversationList({
     return result;
   }, [conversations, kind, search, selectedTagIds, selectedCompany, channelFilter]);
 
+  const userId = user?.id ?? null;
   const matchesFilter = useCallback(
     (c: Conversation, f: InboxFilter) => {
       if (f === "all") return true;
       if (f === "unread") return c.unread_count > 0;
-      if (f === "mine") return c.assigned_agent_id === user?.id;
+      // Every owner of the lead (migration 057) has it under "Meus chats".
+      if (f === "mine")
+        return !!userId && (c.owner_ids?.length ? c.owner_ids.includes(userId) : c.assigned_agent_id === userId);
       return c.status === f;
     },
-    [user?.id]
+    [userId]
   );
 
   const filterCounts = useMemo(() => {

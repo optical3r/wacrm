@@ -216,7 +216,14 @@
       "assignmentUpdateFailed": "Failed to update assignment",
       "networkError": "network error",
       "documentFallback": "Document",
-      "you": "You"
+      "you": "You",
+      "ownersHint": "Lead owners (pick as many as you like)",
+      "ownersCount": "{first} +{count}",
+      "ownersList": "Owners: {names}",
+      "takeLead": "Take this lead",
+      "leaveLead": "Stop owning it",
+      "ownersLocked": "This lead already has an owner. Only the owner or an admin changes its owners.",
+      "ownersLockedShort": "Only an admin changes owners"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -2232,6 +2239,25 @@
       "signOffToast": "Signature turned off for this number.",
       "companyNumbersTitle": "Numbers belong to the company",
       "companyNumbersDesc": "Only the owner and admins connect numbers. To answer through a number, ask to be linked to it."
+    },
+    "rotation": {
+      "title": "Lead rotation",
+      "description": "New leads nobody owns go, one at a time, to the attendants on this list. A lead that already has an owner keeps it, even after the chat is closed.",
+      "on": "Rotation on",
+      "off": "Rotation off",
+      "orderTitle": "Rotation order",
+      "nobody": "Nobody in the rotation yet.",
+      "addTitle": "Add to the rotation",
+      "nextUp": "next",
+      "moveUp": "Move up",
+      "moveDown": "Move down",
+      "remove": "Remove from the rotation",
+      "rules": "When the customer writes to a number that has linked attendants, the rotation only picks among them. With the AI auto-reply on, the rotation kicks in when the AI hands the chat to a human.",
+      "save": "Save rotation",
+      "saveFailed": "Could not save the rotation.",
+      "savedOn": "Rotation saved and on.",
+      "savedOff": "Rotation saved and off.",
+      "pickSomeone": "Pick at least one attendant for the rotation."
     }
   },
   "SignupPage": {

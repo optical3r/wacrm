@@ -1,3 +1,4 @@
+import { assignByRotation } from '@/lib/conversations/owners'
 import type {
   Automation,
   AutomationLogStepResult,
@@ -768,19 +769,24 @@ async function runStep(step: AutomationStep, args: ExecuteArgs): Promise<string>
     case 'assign_conversation': {
       const cfg = step.step_config as AssignConversationStepConfig
       if (!args.contactId) throw new Error(tErr('needsContact', { step: 'assign_conversation' }))
-      let agentId = cfg.agent_id
       if (cfg.mode === 'round_robin') {
-        // Pick any member of the account. The existing implementation
-        // only ever returned the automation's author; preserving that
-        // shape until a real round-robin algorithm replaces it.
-        const { data: profiles } = await db
-          .from('profiles')
-          .select('user_id')
+        // The account's lead rotation (migration 057). Leads that already
+        // have an owner keep it.
+        const { data: convs } = await db
+          .from('conversations')
+          .select('id, last_channel_id')
           .eq('account_id', args.automation.account_id)
+          .eq('contact_id', args.contactId)
+          .order('created_at', { ascending: true })
           .limit(1)
-        agentId = profiles?.[0]?.user_id
+        const conv = (convs?.[0] ?? null) as { id: string; last_channel_id?: string | null } | null
+        if (!conv) return 'no conversation'
+        const picked = await assignByRotation(db, conv.id, conv.last_channel_id ?? null)
+        return picked ? `assigned to ${picked}` : 'kept owner (or rotation off)'
       }
+      const agentId = cfg.agent_id
       if (!agentId) return 'no agent resolved'
+      // An owned lead is never reassigned: the database keeps its owners.
       await db
         .from('conversations')
         .update({ assigned_agent_id: agentId })

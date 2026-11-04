@@ -77,9 +77,10 @@ interface MessageThreadProps {
   onNewMessage: (message: Message) => void;
   onUpdateMessage: (id: string, updates: Partial<Message>) => void;
   onStatusChange: (conversationId: string, status: ConversationStatus) => void;
+  /** Lead owners changed (migration 057); the first one is assigned_agent_id. */
   onAssignChange: (
     conversationId: string,
-    assignedAgentId: string | null,
+    ownerIds: string[],
   ) => void;
   /**
    * On mobile, the thread is shown full-screen with the conversation list
@@ -944,23 +945,25 @@ export function MessageThread({
     [conversation, user?.id, t],
   );
 
-  const handleAssignChange = useCallback(
-    async (agentId: string | null) => {
+  // Lead owners (migration 057). Owner / admin set them freely; an agent
+  // can only take a lead nobody owns, or step out of one they own.
+  const handleOwnersChange = useCallback(
+    async (next: string[]) => {
       if (!conversation) return;
 
       const supabase = createClient();
       const { error } = await supabase
         .from("conversations")
-        .update({ assigned_agent_id: agentId })
+        .update({ owner_ids: next })
         .eq("id", conversation.id);
 
       if (error) {
-        console.error("Failed to update assignment:", error);
-        toast.error(t("assignmentUpdateFailed"));
+        console.error("Failed to update lead owners:", error);
+        toast.error(error.hint === "lead_owner_locked" ? t("ownersLocked") : t("assignmentUpdateFailed"));
         return;
       }
 
-      onAssignChange(conversation.id, agentId);
+      onAssignChange(conversation.id, next);
     },
     [conversation, onAssignChange, t],
   );
@@ -990,7 +993,15 @@ export function MessageThread({
     (s) => s.value === conversation.status
   );
   const assignedAgentId = conversation.assigned_agent_id ?? null;
-  const currentAssignee = profiles.find((p) => p.user_id === assignedAgentId);
+  const ownerIds: string[] = conversation.owner_ids?.length
+    ? conversation.owner_ids
+    : assignedAgentId
+      ? [assignedAgentId]
+      : [];
+  const ownerNames = ownerIds
+    .map((id) => profiles.find((p) => p.user_id === id)?.full_name)
+    .filter(Boolean) as string[];
+  const isOwner = !!user?.id && ownerIds.includes(user.id);
 
   // "via Ana", or "Rodrigo via Ana" when someone else answered through
   // Ana's number. Only when the account has several numbers.
@@ -1083,9 +1094,12 @@ export function MessageThread({
     ) : signToggle ? (
       <div className="mb-2 flex items-center gap-2 text-xs text-muted-foreground">{signToggle}</div>
     ) : null;
-  const assignLabel = assignedAgentId
-    ? (currentAssignee?.full_name ?? t("assigned"))
-    : t("assign");
+  const assignLabel =
+    ownerIds.length === 0
+      ? t("assign")
+      : ownerIds.length === 1
+        ? (ownerNames[0] ?? t("assigned"))
+        : t("ownersCount", { first: ownerNames[0] ?? t("assigned"), count: ownerIds.length - 1 });
 
   return (
     // `min-w-0` is load-bearing: the page already puts min-w-0 on the
@@ -1249,50 +1263,89 @@ export function MessageThread({
               align="end"
               className="border-border bg-popover"
             >
-              {profiles.length === 0 ? (
-                <DropdownMenuItem disabled className="text-sm text-muted-foreground">
-                  {t("noTeammates")}
-                </DropdownMenuItem>
-              ) : (
-                profiles.map((p) => {
-                  const isSelected = p.user_id === assignedAgentId;
-                  const presence = getPresence(p.user_id);
-                  return (
-                    <DropdownMenuItem
-                      key={p.id}
-                      onClick={() => handleAssignChange(p.user_id)}
-                      className={cn(
-                        "text-sm",
-                        isSelected ? "text-primary" : "text-popover-foreground"
-                      )}
-                    >
-                      <PresenceDot
-                        status={presence}
-                        label={presenceLabel(
-                          presence,
-                          getRow(p.user_id)?.last_seen_at ?? null,
-                          now
-                        )}
-                        className="mr-2"
-                      />
-                      <span className="flex-1">
-                        {p.full_name}
-                        {p.user_id === user?.id ? t("me") : ""}
-                      </span>
-                      {isSelected && <Check className="ml-2 h-3 w-3" />}
-                    </DropdownMenuItem>
-                  );
-                })
-              )}
-              {assignedAgentId && (
-                <>
-                  <DropdownMenuSeparator className="bg-border" />
-                  <DropdownMenuItem
-                    onClick={() => handleAssignChange(null)}
-                    className="text-sm text-muted-foreground"
-                  >
-                    {t("unassign")}
+              {canManageMembers ? (
+                profiles.length === 0 ? (
+                  <DropdownMenuItem disabled className="text-sm text-muted-foreground">
+                    {t("noTeammates")}
                   </DropdownMenuItem>
+                ) : (
+                  <>
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">{t("ownersHint")}</div>
+                    {profiles.map((p) => {
+                      const isSelected = ownerIds.includes(p.user_id);
+                      const presence = getPresence(p.user_id);
+                      return (
+                        <DropdownMenuItem
+                          key={p.id}
+                          closeOnClick={false}
+                          onClick={() =>
+                            void handleOwnersChange(
+                              isSelected ? ownerIds.filter((id) => id !== p.user_id) : [...ownerIds, p.user_id],
+                            )
+                          }
+                          className={cn(
+                            "text-sm",
+                            isSelected ? "text-primary" : "text-popover-foreground"
+                          )}
+                        >
+                          <PresenceDot
+                            status={presence}
+                            label={presenceLabel(
+                              presence,
+                              getRow(p.user_id)?.last_seen_at ?? null,
+                              now
+                            )}
+                            className="mr-2"
+                          />
+                          <span className="flex-1">
+                            {p.full_name}
+                            {p.user_id === user?.id ? t("me") : ""}
+                          </span>
+                          {isSelected && <Check className="ml-2 h-3 w-3" />}
+                        </DropdownMenuItem>
+                      );
+                    })}
+                    {ownerIds.length > 0 && (
+                      <>
+                        <DropdownMenuSeparator className="bg-border" />
+                        <DropdownMenuItem
+                          onClick={() => void handleOwnersChange([])}
+                          className="text-sm text-muted-foreground"
+                        >
+                          {t("unassign")}
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                  </>
+                )
+              ) : (
+                <>
+                  {ownerNames.length > 0 && (
+                    <div className="px-2 py-1.5 text-xs text-muted-foreground">
+                      {t("ownersList", { names: ownerNames.join(", ") })}
+                    </div>
+                  )}
+                  {ownerIds.length === 0 && user?.id && (
+                    <DropdownMenuItem
+                      onClick={() => void handleOwnersChange([user.id])}
+                      className="text-sm text-popover-foreground"
+                    >
+                      {t("takeLead")}
+                    </DropdownMenuItem>
+                  )}
+                  {isOwner && user?.id && (
+                    <DropdownMenuItem
+                      onClick={() => void handleOwnersChange(ownerIds.filter((id) => id !== user.id))}
+                      className="text-sm text-muted-foreground"
+                    >
+                      {t("leaveLead")}
+                    </DropdownMenuItem>
+                  )}
+                  {ownerIds.length > 0 && !isOwner && (
+                    <DropdownMenuItem disabled className="text-sm text-muted-foreground">
+                      {t("ownersLockedShort")}
+                    </DropdownMenuItem>
+                  )}
                 </>
               )}
             </DropdownMenuContent>
@@ -1387,10 +1440,12 @@ export function MessageThread({
         disabled={conversation.ai_autoreply_disabled ?? false}
         handoffSummary={conversation.ai_handoff_summary}
         assignedAgentId={assignedAgentId}
+        ownerIds={ownerIds}
+        canManage={canManageMembers}
         currentUserId={user?.id}
         onChange={(patch) => {
-          if ("assigned_agent_id" in patch) {
-            onAssignChange(conversation.id, patch.assigned_agent_id ?? null);
+          if ("owner_ids" in patch && patch.owner_ids) {
+            onAssignChange(conversation.id, patch.owner_ids);
           }
         }}
       />

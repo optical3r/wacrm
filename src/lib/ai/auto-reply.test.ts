@@ -274,7 +274,9 @@ describe('dispatchInboundToAiReply — handoff', () => {
     h.generateReply.mockResolvedValue({ text: '', handoff: true })
     await dispatchInboundToAiReply(ARGS)
     expect(h.engineSendText).not.toHaveBeenCalled()
-    expect(h.state.rpcCalls).toHaveLength(0)
+    // No reply slot claimed; the only RPC is the lead rotation (migration
+    // 057), since no fixed handoff agent is configured.
+    expect(h.state.rpcCalls.map((c) => c.name)).toEqual(['assign_lead_by_rotation'])
     expect(h.state.updatePayload).toMatchObject({ ai_autoreply_disabled: true })
     expect(h.state.updatePayload?.ai_handoff_summary).toContain(
       'AI agent handed off',

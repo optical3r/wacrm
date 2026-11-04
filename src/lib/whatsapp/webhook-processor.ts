@@ -19,6 +19,7 @@ import {
 } from '@/lib/whatsapp/webhook-signature'
 import { isCoexy } from '@/lib/whatsapp/provider'
 import { soleChannelMember } from '@/lib/whatsapp/channels'
+import { assignNewLead } from '@/lib/conversations/owners'
 import { loadCoexyWebhookSecrets } from '@/lib/whatsapp/coexy'
 import { resumeAwaitingReply, runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
@@ -1548,11 +1549,8 @@ interface InboundChannel {
 }
 
 /**
- * Starter accounts: a chat nobody owns goes to the attendant of the
- * number the customer wrote to, when exactly one is linked to it
- * (migration 056). A number shared by several attendants leaves the chat
- * unassigned for any of them to pick up. Skipped when the AI auto-reply
- * is on, since the bot only answers unassigned chats.
+ * A lead nobody owns gets one: the account's rotation, else (Starter)
+ * the number's only linked attendant. See lib/conversations/owners.
  */
 async function assignToChannelOwner(
   accountId: string,
@@ -1563,18 +1561,16 @@ async function assignToChannelOwner(
   try {
     const db = supabaseAdmin()
     const { data: account } = await db.from('accounts').select('plan').eq('id', accountId).maybeSingle()
-    if (account?.plan !== 'starter') return
     const ai = await loadAiConfig(db, accountId)
-    if (ai?.autoReplyEnabled) return
-    const attendant = await soleChannelMember(db, channel.id)
-    if (!attendant) return
-    await db
-      .from('conversations')
-      .update({ assigned_agent_id: attendant })
-      .eq('id', conversation.id)
-      .is('assigned_agent_id', null)
+    await assignNewLead(db, {
+      accountId,
+      conversationId: conversation.id,
+      channelId: channel.id,
+      aiAutoReply: ai?.autoReplyEnabled === true,
+      plan: (account?.plan as string | undefined) ?? null,
+    })
   } catch (err) {
-    console.warn('[webhook] assign to number owner failed:', err instanceof Error ? err.message : err)
+    console.warn('[webhook] assigning the lead failed:', err instanceof Error ? err.message : err)
   }
 }
 

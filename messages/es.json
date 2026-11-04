@@ -216,7 +216,14 @@
       "assignmentUpdateFailed": "Error al actualizar la asignación",
       "networkError": "error de red",
       "documentFallback": "Documento",
-      "you": "Tú"
+      "you": "Tú",
+      "ownersHint": "Dueños del lead (puedes marcar varios)",
+      "ownersCount": "{first} +{count}",
+      "ownersList": "Dueños: {names}",
+      "takeLead": "Tomar este lead",
+      "leaveLead": "Dejar de ser dueño",
+      "ownersLocked": "Este lead ya tiene dueño. Solo el propietario o un administrador cambia los dueños.",
+      "ownersLockedShort": "Solo el admin cambia los dueños"
     },
     "sessionTimer": {
       "expired": "Expirada",
@@ -2232,6 +2239,25 @@
       "signOffToast": "Firma desactivada para este número.",
       "companyNumbersTitle": "Los números son de la empresa",
       "companyNumbersDesc": "Solo el propietario y los administradores conectan números. Para atender por un número, pide que te vinculen."
+    },
+    "rotation": {
+      "title": "Rotación de leads",
+      "description": "Los leads nuevos sin dueño van, uno a la vez, a los agentes de esta lista. Un lead que ya tiene dueño lo conserva, incluso después de cerrar la conversación.",
+      "on": "Rotación activada",
+      "off": "Rotación desactivada",
+      "orderTitle": "Orden de la rotación",
+      "nobody": "Nadie en la rotación todavía.",
+      "addTitle": "Agregar a la rotación",
+      "nextUp": "siguiente",
+      "moveUp": "Subir",
+      "moveDown": "Bajar",
+      "remove": "Quitar de la rotación",
+      "rules": "Cuando el cliente escribe a un número con agentes vinculados, la rotación elige solo entre ellos. Con la respuesta automática por IA activada, la rotación entra cuando la IA pasa la conversación a un humano.",
+      "save": "Guardar rotación",
+      "saveFailed": "No se pudo guardar la rotación.",
+      "savedOn": "Rotación guardada y activada.",
+      "savedOff": "Rotación guardada y desactivada.",
+      "pickSomeone": "Elige al menos un agente para la rotación."
     }
   },
   "SignupPage": {
