@@ -20,6 +20,7 @@ import {
 import { isCoexy } from '@/lib/whatsapp/provider'
 import { soleChannelMember } from '@/lib/whatsapp/channels'
 import { assignNewLead } from '@/lib/conversations/owners'
+import { applyPhoneRead } from '@/lib/whatsapp/mark-read'
 import { loadCoexyWebhookSecrets } from '@/lib/whatsapp/coexy'
 import { resumeAwaitingReply, runAutomationsForTrigger } from '@/lib/automations/engine'
 import { dispatchInboundToFlows } from '@/lib/flows/engine'
@@ -592,6 +593,14 @@ async function handleStatusUpdate(status: {
 
   if (msgErr) {
     console.error('Error updating message status:', msgErr)
+  }
+
+  // A receipt for the CUSTOMER's message means this number read it (on
+  // the phone, or the CRM marked it): the chat stops counting it unread.
+  if (status.status === 'read') {
+    await applyPhoneRead(supabaseAdmin(), status.id).catch((err: unknown) => {
+      console.warn('[webhook] phone read sync failed:', err instanceof Error ? err.message : err)
+    })
   }
 
   // Webhook fan-out for this status change happens at the END of this

@@ -223,6 +223,27 @@ export async function dapiSendList(args: {
   return { messageId: messageIdOf(res) }
 }
 
+/**
+ * Mark inbound messages as read on the phone. Group messages need the
+ * participant who sent them.
+ */
+export async function dapiMarkRead(args: {
+  phoneNumberId: string
+  to: string
+  messageIds: string[]
+  participant?: string | null
+}): Promise<void> {
+  if (args.messageIds.length === 0) return
+  const res = await dapiClient().chats.markAsRead({
+    sessionId: sessionIdFrom(args.phoneNumberId),
+    to: toNumber(args.to),
+    messageIds: args.messageIds,
+    ...(args.participant ? { participant: args.participant } : {}),
+  })
+  const r = res as unknown as { error?: unknown; success?: unknown }
+  if (r && typeof r.error === 'string' && r.success !== true) throw new Error(r.error)
+}
+
 export async function dapiSendTyping(args: { phoneNumberId: string; to?: string; messageId: string }) {
   if (!args.to) return
   const sessionId = sessionIdFrom(args.phoneNumberId)

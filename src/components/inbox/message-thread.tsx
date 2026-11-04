@@ -545,7 +545,16 @@ export function MessageThread({
       .then(({ error }) => {
         if (error) console.error("Failed to reset unread_count:", error);
       });
-  }, [conversationId, hasUnread]);
+    // Read on WhatsApp too (blue ticks, cleared on the phone). Viewers
+    // only look: they leave the customer's messages unread.
+    if (canSendMessages) {
+      void fetch("/api/whatsapp/read", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ conversation_id: conversationId }),
+      }).catch(() => undefined);
+    }
+  }, [conversationId, hasUnread, canSendMessages]);
 
   // Auto-scroll to bottom on new messages
   useEffect(() => {
