@@ -40,7 +40,17 @@ import {
   engineSendText,
 } from "./meta-send";
 import { decideFallback, isExitMessage, resolveFallbackPolicy } from "./fallback";
-import { foldKeywordText, isValidCollectedInput } from "./engine-match";
+import {
+  foldKeywordText,
+  isValidCollectedInput,
+  isWithinBusinessHours,
+  parseHeaderLines,
+  readPath,
+  varToText,
+  waitDurationMs,
+} from "./engine-match";
+import { isDeliverableUrl } from "@/lib/webhooks/ssrf";
+import { flowListensOn } from "./validate";
 import { addContactTagAndDispatch } from "@/lib/contacts/tag-events";
 import { removeContactTag } from "@/lib/contacts/tag-write";
 import {
@@ -49,6 +59,9 @@ import {
   type CreateDealNodeConfig,
   type DispatchInboundInput,
   type DispatchInboundResult,
+  type EndNodeConfig,
+  type HttpFetchNodeConfig,
+  type WaitNodeConfig,
   type FlowNodeRow,
   type FlowRow,
   type FlowRunRow,
@@ -150,7 +163,8 @@ export function isAutoAdvancing(node_type: string): boolean {
     node_type === "send_media" ||
     node_type === "condition" ||
     node_type === "set_tag" ||
-    node_type === "create_deal"
+    node_type === "create_deal" ||
+    node_type === "http_fetch"
   );
 }
 
@@ -159,7 +173,8 @@ export function isSuspending(node_type: string): boolean {
   return (
     node_type === "send_buttons" ||
     node_type === "send_list" ||
-    node_type === "collect_input"
+    node_type === "collect_input" ||
+    node_type === "wait"
   );
 }
 
@@ -347,6 +362,7 @@ async function findEntryFlow(
   accountId: string,
   message: ParsedInbound,
   isFirstInbound: boolean,
+  channelId: string | null,
 ): Promise<FlowRow | null> {
   // A tap used to be rejected outright here, on the reasoning that
   // interactive replies are responses to existing prompts. That holds
@@ -369,7 +385,8 @@ async function findEntryFlow(
     .order("created_at", { ascending: true });
   if (error || !flows) return null;
 
-  const typed = flows as FlowRow[];
+  // Flows limited to other numbers (Starter, several numbers) sit out.
+  const typed = (flows as FlowRow[]).filter((f) => flowListensOn(f, channelId));
   for (const flow of typed) {
     if (flow.trigger_type === "keyword") {
       const cfg = flow.trigger_config as KeywordTriggerConfig;
@@ -528,8 +545,16 @@ async function evaluateConditionNode(
   cfg: ConditionNodeConfig,
 ): Promise<boolean> {
   let subjectValue: string | undefined;
+  if (cfg.subject === "business_hours") {
+    return isWithinBusinessHours(new Date(), {
+      window: cfg.value,
+      days: cfg.days,
+      timezone: cfg.timezone,
+    });
+  }
   if (cfg.subject === "var") {
-    const v = run.vars[cfg.subject_key];
+    const raw = readPath(run.vars, cfg.subject_key);
+    const v = raw !== null && typeof raw === "object" ? JSON.stringify(raw) : raw;
     subjectValue = typeof v === "string" ? v : v === undefined ? undefined : String(v);
   } else if (cfg.subject === "tag") {
     const { count } = await db
@@ -571,10 +596,10 @@ async function evaluateConditionNode(
  */
 function interpolateVars(template: string, vars: Record<string, unknown>): string {
   if (!template) return "";
-  return template.replace(/\{\{vars\.([a-zA-Z0-9_]+)\}\}/g, (_, key) => {
-    const v = vars[key];
-    return v === undefined || v === null ? "" : String(v);
-  });
+  // `{{vars.order.status}}` reads into an object saved by a webhook node.
+  return template.replace(/\{\{vars\.([a-zA-Z0-9_.]+)\}\}/g, (_, key: string) =>
+    varToText(readPath(vars, key)),
+  );
 }
 
 /**
@@ -855,6 +880,41 @@ async function advanceFromNodeKey(
       currentKey = cfg.next_node_key;
       continue;
     }
+    if (node.node_type === "wait") {
+      const cfg = node.config as unknown as WaitNodeConfig;
+      const resumeAt = new Date(Date.now() + waitDurationMs(cfg.amount, cfg.unit));
+      let q = db
+        .from("flow_runs")
+        .update({
+          current_node_key: node.node_key,
+          resume_at: resumeAt.toISOString(),
+          last_advanced_at: new Date().toISOString(),
+        })
+        .eq("id", run.id)
+        .eq("status", "active");
+      q = run.current_node_key === null
+        ? q.is("current_node_key", null)
+        : q.eq("current_node_key", run.current_node_key);
+      const { data: parked } = await q.select("id");
+      if (!parked || parked.length === 0) {
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "lost_race_during_advance",
+        });
+      } else {
+        run.current_node_key = node.node_key;
+        run.resume_at = resumeAt.toISOString();
+        await logEvent(db, run.id, "node_entered", node.node_key, {
+          waiting_until: resumeAt.toISOString(),
+        });
+      }
+      return { outcome: "advanced" };
+    }
+    if (node.node_type === "http_fetch") {
+      const cfg = node.config as unknown as HttpFetchNodeConfig;
+      const ok = await executeHttpFetch(db, run, node.node_key, cfg);
+      currentKey = ok || !cfg.error_next ? cfg.next_node_key : cfg.error_next;
+      continue;
+    }
     if (node.node_type === "send_buttons") {
       // Same failure contract as send_message / send_media /
       // collect_input above: log + fail the run. Previously an
@@ -916,7 +976,17 @@ async function advanceFromNodeKey(
       return { outcome: "handed_off" };
     }
     if (node.node_type === "end") {
-      await logEvent(db, run.id, "completed", node.node_key);
+      const endCfg = (node.config ?? {}) as EndNodeConfig;
+      if (endCfg.close_conversation && run.conversation_id) {
+        await db
+          .from("conversations")
+          .update({ status: "closed", updated_at: new Date().toISOString() })
+          .eq("id", run.conversation_id)
+          .eq("account_id", run.account_id);
+      }
+      await logEvent(db, run.id, "completed", node.node_key, {
+        closed_conversation: Boolean(endCfg.close_conversation),
+      });
       await endRun(db, run.id, "completed", "end_node");
       return { outcome: "completed" };
     }
@@ -1014,6 +1084,7 @@ export async function dispatchInboundToFlows(
       input.accountId,
       input.message,
       input.isFirstInboundMessage,
+      input.channelId ?? null,
     );
     if (!flow || !flow.entry_node_id) {
       return { consumed: false, outcome: "no_match" };
@@ -1026,6 +1097,86 @@ export async function dispatchInboundToFlows(
       err instanceof Error ? err.message : err,
     );
     return { consumed: false, outcome: "no_match" };
+  }
+}
+
+/**
+ * http_fetch: call the configured URL and keep the answer in
+ * `vars[save_as]`. Same SSRF guard as the automations webhook step: no
+ * private / loopback addresses, no redirects, 10 s timeout. Returns
+ * whether the call succeeded (2xx).
+ */
+async function executeHttpFetch(
+  db: AdminClient,
+  run: FlowRunRow,
+  nodeKey: string,
+  cfg: HttpFetchNodeConfig,
+): Promise<boolean> {
+  try {
+    const { data: contact } = run.contact_id
+      ? await db
+          .from("contacts")
+          .select("name, phone, email, company")
+          .eq("id", run.contact_id)
+          .maybeSingle()
+      : { data: null };
+    const scope = { vars: run.vars, contact: contact ?? {} };
+    const fill = (tpl: string, json: boolean) =>
+      tpl.replace(/\{\{(vars|contact)\.([a-zA-Z0-9_.]+)\}\}/g, (_, root: string, key: string) => {
+        const text = varToText(readPath(scope[root as "vars" | "contact"], key));
+        return json ? JSON.stringify(text).slice(1, -1) : encodeURIComponent(text);
+      });
+
+    const url = fill(cfg.url ?? "", false).trim();
+    if (!url || !(await isDeliverableUrl(url))) {
+      throw new Error("destination not allowed");
+    }
+    const method = cfg.method === "GET" ? "GET" : "POST";
+    const headers: Record<string, string> = {
+      accept: "application/json",
+      ...parseHeaderLines(cfg.headers_text),
+    };
+    let body: string | undefined;
+    if (method === "POST") {
+      const tpl = cfg.body_template?.trim();
+      body = tpl
+        ? fill(tpl, true)
+        : JSON.stringify({ contact: scope.contact, vars: run.vars });
+      if (!Object.keys(headers).some((h) => h.toLowerCase() === "content-type")) {
+        headers["content-type"] = "application/json";
+      }
+    }
+    const res = await fetch(url, {
+      method,
+      headers,
+      body,
+      redirect: "manual",
+      signal: AbortSignal.timeout(10_000),
+    });
+    const text = (await res.text()).slice(0, 16_000);
+    let parsed: unknown = text.slice(0, 2_000);
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      // Not JSON: keep the (trimmed) text.
+    }
+    if (cfg.save_as && /^[a-zA-Z_][a-zA-Z0-9_]*$/.test(cfg.save_as)) {
+      const newVars = { ...run.vars, [cfg.save_as]: parsed };
+      const { error } = await db.from("flow_runs").update({ vars: newVars }).eq("id", run.id);
+      if (!error) run.vars = newVars;
+    }
+    await logEvent(db, run.id, res.ok ? "node_entered" : "error", nodeKey, {
+      node_type: "http_fetch",
+      status: res.status,
+      ...(res.ok ? {} : { reason: "http_fetch_status" }),
+    });
+    return res.ok;
+  } catch (err) {
+    await logEvent(db, run.id, "error", nodeKey, {
+      reason: "http_fetch_failed",
+      detail: err instanceof Error ? err.message : String(err),
+    });
+    return false;
   }
 }
 
@@ -1106,6 +1257,15 @@ async function handleReplyForActiveRun(
     await logEvent(db, run.id, "handoff", run.current_node_key, { reason: "exit_keyword" });
     await endRun(db, run.id, "handed_off", "exit_keyword");
     return { consumed: true, flow_run_id: run.id, outcome: "handed_off" };
+  }
+
+  // Sitting on a wait node: the reply stays in the inbox for the team,
+  // and the flow carries on when the wait is over. No reprompt.
+  if (currentNode.node_type === "wait") {
+    await logEvent(db, run.id, "reply_received", currentNode.node_key, {
+      during_wait: true,
+    });
+    return { consumed: true, flow_run_id: run.id, outcome: "no_match" };
   }
 
   // Two ways a reply can advance:
@@ -1392,4 +1552,56 @@ export async function startFlowManually(args: {
   const nodes = await loadAllNodes(db, flow.id);
   const outcome = await advanceFromNodeKey(db, run, flow.entry_node_id, nodes);
   return { ok: true, flow_run_id: run.id, outcome: outcome.outcome };
+}
+
+// ============================================================
+// Wait resume (called by /api/flows/cron every 5 minutes)
+// ============================================================
+
+/**
+ * Carries on every active run whose wait is over. The resume_at column
+ * is cleared with an optimistic UPDATE first, so two overlapping cron
+ * calls never resume the same run twice.
+ */
+export async function resumeWaitingRuns(limit = 50): Promise<number> {
+  const db = supabaseAdmin();
+  const { data, error } = await db
+    .from("flow_runs")
+    .select("*")
+    .eq("status", "active")
+    .not("resume_at", "is", null)
+    .lte("resume_at", new Date().toISOString())
+    .order("resume_at", { ascending: true })
+    .limit(limit);
+  if (error) {
+    console.error("[flows] resume scan failed:", error.message);
+    return 0;
+  }
+  let resumed = 0;
+  for (const row of (data ?? []) as FlowRunRow[]) {
+    const { data: claimed } = await db
+      .from("flow_runs")
+      .update({ resume_at: null })
+      .eq("id", row.id)
+      .eq("status", "active")
+      .eq("resume_at", row.resume_at!)
+      .select("id");
+    if (!claimed || claimed.length === 0) continue;
+    try {
+      const nodes = await loadAllNodes(db, row.flow_id);
+      const node = row.current_node_key ? nodes.get(row.current_node_key) : undefined;
+      if (!node || node.node_type !== "wait") continue;
+      const next = (node.config as unknown as WaitNodeConfig).next_node_key;
+      row.resume_at = null;
+      await logEvent(db, row.id, "node_entered", node.node_key, { wait_over: true });
+      await advanceFromNodeKey(db, row, next, nodes);
+      resumed += 1;
+    } catch (err) {
+      console.error(
+        "[flows] resume failed:",
+        err instanceof Error ? err.message : err,
+      );
+    }
+  }
+  return resumed;
 }

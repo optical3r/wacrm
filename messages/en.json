@@ -1376,7 +1376,36 @@
         "pickStage": "Pick a stage",
         "dealTitleLabel": "Deal title",
         "dealValueLabel": "Value",
-        "dealHelp": "The title accepts collected answers, such as"
+        "dealHelp": "The title accepts collected answers, such as",
+        "businessHours": "Business hours",
+        "ifOpenAdvance": "If open, go to",
+        "ifClosedAdvance": "If closed, go to",
+        "opensAt": "Opens at",
+        "closesAt": "Closes at",
+        "businessHoursHelp": "Brasília time. Mark the days you are open.",
+        "waitAmount": "Wait",
+        "waitUnit": "Unit",
+        "unitMinutes": "Minutes",
+        "unitHours": "Hours",
+        "unitDays": "Days",
+        "waitHelp": "The flow carries on up to 5 minutes after the set time. A reply during the wait stays in the inbox and the flow carries on later.",
+        "httpMethod": "Method",
+        "httpBody": "Body (JSON). Empty: sends the contact and the collected answers.",
+        "httpHeaders": "Headers (one per line, Name: value)",
+        "httpSaveAs": "Save the answer as",
+        "httpHelp": "Use it in later blocks:",
+        "httpOnSuccess": "On success, go to",
+        "httpOnError": "On error, go to (optional)",
+        "assignToLabel": "Assign to",
+        "assignToNobody": "Nobody (just mark pending)",
+        "closeConversation": "Close the conversation when it ends",
+        "weekday0": "Sun",
+        "weekday1": "Mon",
+        "weekday2": "Tue",
+        "weekday3": "Wed",
+        "weekday4": "Thu",
+        "weekday5": "Fri",
+        "weekday6": "Sat"
       },
       "categories": {
         "messaging": "Messaging",
@@ -1427,8 +1456,22 @@
         "create_deal": {
           "label": "Create deal",
           "blurb": "Creates a pipeline deal for the contact"
+        },
+        "wait": {
+          "label": "Wait",
+          "blurb": "Pauses the flow for minutes, hours or days"
+        },
+        "http_fetch": {
+          "label": "Webhook",
+          "blurb": "Calls an external system and keeps the answer"
         }
-      }
+      },
+      "slotOk": "Success",
+      "slotError": "Error",
+      "channelsLabel": "Numbers",
+      "channelsAll": "None picked: the flow runs on every number.",
+      "channelsSome": "The flow only starts on messages arriving on {count, plural, one {this number} other {these # numbers}}.",
+      "channelFallbackName": "Number"
     },
     "validation": {
       "noIssues": "No issues. Ready to activate.",
@@ -2594,7 +2637,12 @@
       "createDealNeedsStage": "The Create deal node needs a pipeline and a stage.",
       "createDealNeedsTitle": "The Create deal node needs a title.",
       "createDealNeedsNext": "The Create deal node must point to a next node.",
-      "createDealMissingNext": "The Create deal node points to a missing node: \"{key}\"."
+      "createDealMissingNext": "The Create deal node points to a missing node: \"{key}\".",
+      "businessHoursInvalid": "Set the opening and closing time.",
+      "waitInvalid": "The wait must be at least 1 minute and at most 30 days.",
+      "httpNeedsUrl": "The Webhook needs a URL starting with https://.",
+      "nodeNeedsNext": "This node must point to a next node.",
+      "nodeMissingNext": "This node points to a missing node: \"{key}\"."
     },
     "automations": {
       "needsStep": "active automations need at least one step",

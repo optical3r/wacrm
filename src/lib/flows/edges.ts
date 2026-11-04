@@ -49,7 +49,8 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
       case "send_media":
       case "collect_input":
       case "set_tag":
-      case "create_deal": {
+      case "create_deal":
+      case "wait": {
         const next = (cfg as { next_node_key?: string }).next_node_key;
         if (next && knownKeys.has(next)) {
           edges.push({
@@ -62,6 +63,28 @@ export function deriveCanvasEdges(nodes: BuilderNode[]): CanvasEdge[] {
         break;
       }
 
+      case "http_fetch": {
+        const next = (cfg as { next_node_key?: string }).next_node_key;
+        const errNext = (cfg as { error_next?: string }).error_next;
+        if (next && knownKeys.has(next)) {
+          edges.push({
+            id: `${node.node_key}--next--${next}`,
+            source: node.node_key,
+            target: next,
+            sourceHandle: "next",
+          });
+        }
+        if (errNext && knownKeys.has(errNext)) {
+          edges.push({
+            id: `${node.node_key}--error--${errNext}`,
+            source: node.node_key,
+            target: errNext,
+            sourceHandle: "error",
+            label: "error",
+          });
+        }
+        break;
+      }
       case "condition": {
         const trueNext = (cfg as { true_next?: string }).true_next;
         const falseNext = (cfg as { false_next?: string }).false_next;
@@ -181,7 +204,14 @@ export function outgoingSlots(node: BuilderNode): OutgoingSlot[] {
     case "collect_input":
     case "set_tag":
     case "create_deal":
+    case "wait":
       return [{ id: "next", label: "Next" }];
+
+    case "http_fetch":
+      return [
+        { id: "next", label: "Next" },
+        { id: "error", label: "error" },
+      ];
 
     case "condition":
       return [
@@ -256,7 +286,13 @@ export function applyEdgeConnection(
     case "collect_input":
     case "set_tag":
     case "create_deal":
+    case "wait":
       if (sourceHandle === "next") return { next_node_key: targetKey };
+      return null;
+
+    case "http_fetch":
+      if (sourceHandle === "next") return { next_node_key: targetKey };
+      if (sourceHandle === "error") return { error_next: targetKey };
       return null;
 
     case "condition":
@@ -350,10 +386,23 @@ function patchedConfigWithoutKey(
     case "send_media":
     case "collect_input":
     case "set_tag":
-    case "create_deal": {
+    case "create_deal":
+    case "wait": {
       const next = (cfg as { next_node_key?: string }).next_node_key;
       if (next !== deletedKey) return null;
       return { ...cfg, next_node_key: "" };
+    }
+
+    case "http_fetch": {
+      const c = cfg as { next_node_key?: string; error_next?: string };
+      const nextMatch = c.next_node_key === deletedKey;
+      const errMatch = c.error_next === deletedKey;
+      if (!nextMatch && !errMatch) return null;
+      return {
+        ...cfg,
+        ...(nextMatch ? { next_node_key: "" } : {}),
+        ...(errMatch ? { error_next: "" } : {}),
+      };
     }
 
     case "condition": {

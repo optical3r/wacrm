@@ -25,7 +25,7 @@
 
 import { INTERACTIVE_LIMITS } from "@/lib/whatsapp/meta-api";
 import { getT } from "@/lib/i18n/translate";
-import { foldKeywordText } from "./engine-match";
+import { foldKeywordText, parseHoursWindow } from "./engine-match";
 
 const t = getT("Validation.flows");
 
@@ -620,14 +620,24 @@ function validateNode(
 
     case "condition": {
       const cfg = node.config as {
-        subject?: "var" | "tag" | "contact_field";
+        subject?: "var" | "tag" | "contact_field" | "business_hours";
         subject_key?: string;
         operator?: "equals" | "contains" | "present" | "absent";
         value?: string;
         true_next?: string;
         false_next?: string;
       };
-      if (!cfg.subject || !["var", "tag", "contact_field"].includes(cfg.subject)) {
+      const isHours = cfg.subject === "business_hours";
+      if (isHours && !parseHoursWindow(cfg.value)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "value",
+          message: t("businessHoursInvalid"),
+        });
+      }
+      if (!cfg.subject || !["var", "tag", "contact_field", "business_hours"].includes(cfg.subject)) {
         issues.push({
           severity: "error",
           scope: "node",
@@ -636,7 +646,7 @@ function validateNode(
           message: t("conditionNeedsSubject"),
         });
       }
-      if (!cfg.subject_key?.trim()) {
+      if (!isHours && !cfg.subject_key?.trim()) {
         issues.push({
           severity: "error",
           scope: "node",
@@ -657,6 +667,7 @@ function validateNode(
           message: t("conditionNeedsOperator"),
         });
       } else if (
+        !isHours &&
         (cfg.operator === "equals" || cfg.operator === "contains") &&
         (cfg.value === undefined || cfg.value === "")
       ) {
@@ -732,6 +743,62 @@ function validateNode(
           node_key: node.node_key,
           field: "next_node_key",
           message: t("setTagMissingNext", { key: cfg.next_node_key }),
+        });
+      }
+      break;
+    }
+
+    case "wait": {
+      const cfg = node.config as { amount?: unknown; unit?: string; next_node_key?: string };
+      const amount = Number(cfg.amount);
+      const unit = cfg.unit ?? "minutes";
+      const ms = amount * (unit === "days" ? 86_400_000 : unit === "hours" ? 3_600_000 : 60_000);
+      if (!Number.isFinite(amount) || amount < 1 || ms > 30 * 86_400_000) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "amount",
+          message: t("waitInvalid"),
+        });
+      }
+      pushNextIssues(issues, node.node_key, "next_node_key", cfg.next_node_key, knownKeys);
+      break;
+    }
+
+    case "http_fetch": {
+      const cfg = node.config as {
+        url?: string;
+        save_as?: string;
+        next_node_key?: string;
+        error_next?: string;
+      };
+      if (!/^https:\/\/\S+$/i.test((cfg.url ?? "").trim())) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "url",
+          message: t("httpNeedsUrl"),
+        });
+      }
+      if (cfg.save_as && !/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(cfg.save_as)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "save_as",
+          message: t("invalidVarKey", { key: cfg.save_as }),
+        });
+      }
+      pushNextIssues(issues, node.node_key, "next_node_key", cfg.next_node_key, knownKeys);
+      if (cfg.error_next && !knownKeys.has(cfg.error_next)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "error_next",
+          message: t("nodeMissingNext", { key: cfg.error_next }),
         });
       }
       break;
@@ -833,9 +900,14 @@ export function outgoingEdges(node: NodeInput): string[] {
     case "send_media":
     case "collect_input":
     case "set_tag":
-    case "create_deal": {
+    case "create_deal":
+    case "wait": {
       const cfg = node.config as { next_node_key?: string };
       return cfg.next_node_key ? [cfg.next_node_key] : [];
+    }
+    case "http_fetch": {
+      const cfg = node.config as { next_node_key?: string; error_next?: string };
+      return [cfg.next_node_key, cfg.error_next].filter((k): k is string => Boolean(k));
     }
     case "condition": {
       const cfg = node.config as {
@@ -893,6 +965,8 @@ export function findTriggerConflicts(flow: TriggerFlow, activeOthers: TriggerFlo
       ? raw.filter((k): k is string => typeof k === "string" && k.trim() !== "").map((k) => foldKeywordText(k).trim())
       : [];
   };
+  // Flows limited to different numbers never compete for a message.
+  activeOthers = activeOthers.filter((o) => channelsOverlap(flow, o));
   if (flow.trigger_type === "first_inbound_message") {
     const other = activeOthers.find((o) => o.trigger_type === "first_inbound_message");
     if (other) {
@@ -916,3 +990,42 @@ export function findTriggerConflicts(flow: TriggerFlow, activeOthers: TriggerFlo
   return issues;
 }
 
+/** The numbers a flow is limited to; empty means every number. */
+export function flowChannelIds(f: { trigger_config: Record<string, unknown> | unknown }): string[] {
+  const raw = (f.trigger_config as { channel_ids?: unknown } | null)?.channel_ids;
+  return Array.isArray(raw) ? raw.filter((c): c is string => typeof c === "string" && c !== "") : [];
+}
+
+/** Whether a flow listens on the number an inbound arrived on. */
+export function flowListensOn(
+  f: { trigger_config: Record<string, unknown> | unknown },
+  channelId: string | null | undefined,
+): boolean {
+  const ids = flowChannelIds(f);
+  if (ids.length === 0 || !channelId) return true;
+  return ids.includes(channelId);
+}
+
+function channelsOverlap(
+  a: { trigger_config: Record<string, unknown> | unknown },
+  b: { trigger_config: Record<string, unknown> | unknown },
+): boolean {
+  const x = flowChannelIds(a);
+  const y = flowChannelIds(b);
+  if (x.length === 0 || y.length === 0) return true;
+  return x.some((id) => y.includes(id));
+}
+
+function pushNextIssues(
+  issues: ValidationIssue[],
+  nodeKey: string,
+  field: string,
+  next: string | undefined,
+  knownKeys: Set<string>,
+): void {
+  if (!next) {
+    issues.push({ severity: "error", scope: "node", node_key: nodeKey, field, message: t("nodeNeedsNext") });
+  } else if (!knownKeys.has(next)) {
+    issues.push({ severity: "error", scope: "node", node_key: nodeKey, field, message: t("nodeMissingNext", { key: next }) });
+  }
+}

@@ -19,6 +19,8 @@
 import {
   Briefcase,
   Flag,
+  Globe,
+  Hourglass,
   GitFork,
   Inbox,
   ListChecks,
@@ -51,6 +53,8 @@ export type NodeType =
   | 'condition'
   | 'set_tag'
   | 'create_deal'
+  | 'wait'
+  | 'http_fetch'
   | 'handoff'
   | 'end';
 
@@ -153,6 +157,18 @@ export const NODE_META: Record<
     color: 'text-lime-400',
     category: 'logic',
   },
+  wait: {
+    slugSeed: 'Wait',
+    icon: Hourglass,
+    color: 'text-slate-400',
+    category: 'flow',
+  },
+  http_fetch: {
+    slugSeed: 'Webhook',
+    icon: Globe,
+    color: 'text-orange-400',
+    category: 'logic',
+  },
   handoff: {
     slugSeed: 'Handoff to agent',
     icon: UserPlus,
@@ -204,6 +220,8 @@ const NODE_HUE: Record<NodeType, { l: number; c: number; h: number }> = {
   condition: { l: 0.72, c: 0.15, h: 65 }, // amber — a fork in the road
   set_tag: { l: 0.65, c: 0.15, h: 350 }, // pink
   create_deal: { l: 0.66, c: 0.15, h: 135 }, // green — money in the pipeline
+  wait: { l: 0.6, c: 0.05, h: 240 }, // slate — time passing
+  http_fetch: { l: 0.68, c: 0.15, h: 45 }, // orange — talks to the outside
   handoff: { l: 0.65, c: 0.17, h: 16 }, // rose — hands off
   end: { l: 0.55, c: 0.01, h: 260 }, // neutral grey — terminal
 };
@@ -379,6 +397,10 @@ export function summarizeNode(
       return varKey ? `→ vars.${varKey}` : null;
     }
     case 'condition': {
+      if (cfg.subject === 'business_hours') {
+        // e.g. "🕘 08:00-18:00" — the window reads on its own.
+        return typeof cfg.value === 'string' && cfg.value ? `🕘 ${cfg.value}` : null;
+      }
       const subjectKey =
         typeof cfg.subject_key === 'string' ? cfg.subject_key : '';
       if (!subjectKey) return null;
@@ -422,6 +444,16 @@ export function summarizeNode(
     case 'create_deal': {
       const title = typeof cfg.title === 'string' ? cfg.title : '';
       return title ? truncate(title) : null;
+    }
+    case 'wait': {
+      const amount = Number(cfg.amount) || 0;
+      const unit = cfg.unit === 'days' ? 'd' : cfg.unit === 'hours' ? 'h' : 'min';
+      return amount > 0 ? `${amount} ${unit}` : null;
+    }
+    case 'http_fetch': {
+      const url = typeof cfg.url === 'string' ? cfg.url : '';
+      const method = cfg.method === 'GET' ? 'GET' : 'POST';
+      return url ? `${method} ${truncate(url, 50)}` : null;
     }
     case 'handoff': {
       const note = typeof cfg.note === 'string' ? cfg.note : '';

@@ -142,7 +142,7 @@ export type ConditionOperator =
   | "present"
   | "absent";
 
-export type ConditionSubject = "var" | "tag" | "contact_field";
+export type ConditionSubject = "var" | "tag" | "contact_field" | "business_hours";
 
 /**
  * Routes the run based on a predicate over the contact's tags,
@@ -158,8 +158,15 @@ export interface ConditionNodeConfig {
    */
   subject_key: string;
   operator: ConditionOperator;
-  /** Compared against `subject` for `equals`/`contains`. Ignored for `present`/`absent`. */
+  /**
+   * Compared against `subject` for `equals`/`contains`. Ignored for
+   * `present`/`absent`. For `business_hours`: the window "HH:mm-HH:mm".
+   */
   value?: string;
+  /** `business_hours` only: open weekdays, 0 = Sunday. Empty = every day. */
+  days?: number[];
+  /** `business_hours` only: IANA time zone. Default America/Sao_Paulo. */
+  timezone?: string;
   /** Node to advance to when the predicate evaluates true. */
   true_next: string;
   /** Node to advance to when it evaluates false. */
@@ -183,8 +190,38 @@ export interface CreateDealNodeConfig {
   next_node_key: string;
 }
 
-// Terminal nodes carry no config — they just stop the run.
-export type EndNodeConfig = Record<string, never>;
+/** Ends the run. Optionally closes the conversation too. */
+export interface EndNodeConfig {
+  close_conversation?: boolean;
+}
+
+/**
+ * Pauses the run, then carries on at `next_node_key`. The cron sweep
+ * (every 5 minutes) resumes runs whose `flow_runs.resume_at` passed.
+ */
+export interface WaitNodeConfig {
+  amount: number;
+  unit: "minutes" | "hours" | "days";
+  next_node_key: string;
+}
+
+/**
+ * Calls an external URL. The JSON answer (or the text, when it is not
+ * JSON) is stored in `vars[save_as]`, so later nodes can read
+ * `{{vars.<save_as>.field}}`. A failed call goes to `error_next` when
+ * set, otherwise on to `next_node_key`.
+ */
+export interface HttpFetchNodeConfig {
+  url: string;
+  method: "GET" | "POST";
+  /** POST body; `{{vars.x}}` and `{{contact.x}}` are filled in. */
+  body_template?: string;
+  /** One "Name: value" per line. */
+  headers_text?: string;
+  save_as?: string;
+  next_node_key: string;
+  error_next?: string;
+}
 
 /**
  * Total union — every concrete node_type the v1 engine understands.
@@ -204,6 +241,8 @@ export type FlowNodeConfig =
   | { node_type: "condition"; config: ConditionNodeConfig }
   | { node_type: "set_tag"; config: SetTagNodeConfig }
   | { node_type: "create_deal"; config: CreateDealNodeConfig }
+  | { node_type: "wait"; config: WaitNodeConfig }
+  | { node_type: "http_fetch"; config: HttpFetchNodeConfig }
   | { node_type: "handoff"; config: HandoffNodeConfig }
   | { node_type: "end"; config: EndNodeConfig };
 
@@ -290,6 +329,8 @@ export interface FlowRunRow {
   last_advanced_at: string;
   ended_at: string | null;
   end_reason: string | null;
+  /** Set while the run sits on a `wait` node (migration 055). */
+  resume_at?: string | null;
 }
 
 // ============================================================
@@ -356,6 +397,8 @@ export interface DispatchInboundInput {
   contactId: string;
   conversationId: string;
   message: ParsedInbound;
+  /** The number the message arrived on, for flows limited to numbers. */
+  channelId?: string | null;
 }
 
 export interface DispatchInboundResult {

@@ -1024,6 +1024,7 @@ async function processMessage(
     userId: configOwnerUserId,
     contactId: contactRecord.id,
     conversationId: conversation.id,
+    channelId: channel.id,
     message:
       interactiveReplyId
         ? {

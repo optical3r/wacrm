@@ -1376,7 +1376,36 @@
         "pickStage": "Elige la etapa",
         "dealTitleLabel": "Título del negocio",
         "dealValueLabel": "Valor",
-        "dealHelp": "El título acepta respuestas recogidas, como"
+        "dealHelp": "El título acepta respuestas recogidas, como",
+        "businessHours": "Horario de atención",
+        "ifOpenAdvance": "Si está abierto, ir a",
+        "ifClosedAdvance": "Si está cerrado, ir a",
+        "opensAt": "Abre a las",
+        "closesAt": "Cierra a las",
+        "businessHoursHelp": "Hora de Brasilia. Marca los días en que abres.",
+        "waitAmount": "Esperar",
+        "waitUnit": "Unidad",
+        "unitMinutes": "Minutos",
+        "unitHours": "Horas",
+        "unitDays": "Días",
+        "waitHelp": "El flujo sigue hasta 5 minutos después del tiempo indicado. Una respuesta durante la espera queda en el inbox y el flujo sigue después.",
+        "httpMethod": "Método",
+        "httpBody": "Cuerpo (JSON). Vacío: envía el contacto y las respuestas recogidas.",
+        "httpHeaders": "Cabeceras (una por línea, Nombre: valor)",
+        "httpSaveAs": "Guardar la respuesta en",
+        "httpHelp": "Úsala en los siguientes bloques:",
+        "httpOnSuccess": "Si sale bien, ir a",
+        "httpOnError": "Si falla, ir a (opcional)",
+        "assignToLabel": "Asignar a",
+        "assignToNobody": "Nadie (solo dejar pendiente)",
+        "closeConversation": "Cerrar la conversación al terminar",
+        "weekday0": "Dom",
+        "weekday1": "Lun",
+        "weekday2": "Mar",
+        "weekday3": "Mié",
+        "weekday4": "Jue",
+        "weekday5": "Vie",
+        "weekday6": "Sáb"
       },
       "categories": {
         "messaging": "Mensajería",
@@ -1427,8 +1456,22 @@
         "create_deal": {
           "label": "Crear negocio",
           "blurb": "Crea un negocio en el embudo para el contacto"
+        },
+        "wait": {
+          "label": "Esperar",
+          "blurb": "Pausa el flujo por minutos, horas o días"
+        },
+        "http_fetch": {
+          "label": "Webhook",
+          "blurb": "Llama a un sistema externo y guarda la respuesta"
         }
-      }
+      },
+      "slotOk": "Éxito",
+      "slotError": "Error",
+      "channelsLabel": "Números",
+      "channelsAll": "Ninguno marcado: el flujo vale para todos los números.",
+      "channelsSome": "El flujo solo empieza con mensajes que llegan a {count, plural, one {este número} other {estos # números}}.",
+      "channelFallbackName": "Número"
     },
     "validation": {
       "noIssues": "Sin problemas. Listo para activar.",
@@ -2594,7 +2637,12 @@
       "createDealNeedsStage": "El nodo Crear negocio necesita un embudo y una etapa.",
       "createDealNeedsTitle": "El nodo Crear negocio necesita un título.",
       "createDealNeedsNext": "El nodo Crear negocio debe apuntar a un siguiente nodo.",
-      "createDealMissingNext": "El nodo Crear negocio apunta a un nodo inexistente: \"{key}\"."
+      "createDealMissingNext": "El nodo Crear negocio apunta a un nodo inexistente: \"{key}\".",
+      "businessHoursInvalid": "Indica la hora de apertura y de cierre.",
+      "waitInvalid": "La espera debe ser de al menos 1 minuto y como máximo 30 días.",
+      "httpNeedsUrl": "El Webhook necesita una URL que empiece por https://.",
+      "nodeNeedsNext": "Este nodo debe apuntar a un siguiente nodo.",
+      "nodeMissingNext": "Este nodo apunta a un nodo inexistente: \"{key}\"."
     },
     "automations": {
       "needsStep": "las automatizaciones activas necesitan al menos un paso",

@@ -130,6 +130,9 @@ function slotColor(nodeType: NodeType, slotId: string, fallback: string) {
   if (nodeType === 'condition' && slotId === 'false') {
     return nodeColors('handoff').solid;
   }
+  if (nodeType === 'http_fetch') {
+    return nodeColors(slotId === 'error' ? 'handoff' : 'start').solid;
+  }
   return fallback;
 }
 
@@ -220,7 +223,9 @@ function FlowNodeCard({ data, selected }: NodeProps) {
               className="text-muted-foreground relative flex items-center justify-between gap-2 rounded px-1 py-0.5 text-[11px]"
             >
               <span className="truncate" title={slot.label}>
-                {slot.label}
+                {node.node_type === 'http_fetch'
+                  ? t(slot.id === 'error' ? 'slotError' : 'slotOk')
+                  : slot.label}
               </span>
               <Handle
                 type="source"
@@ -701,6 +706,8 @@ const ADD_NODE_TYPES: NodeType[] = [
   'condition',
   'set_tag',
   'create_deal',
+  'wait',
+  'http_fetch',
   'handoff',
   'end',
 ];

@@ -2,6 +2,7 @@ import { timingSafeEqual } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { supabaseAdmin } from '@/lib/flows/admin-client'
 import { resolveFallbackPolicy } from '@/lib/flows/fallback'
+import { resumeWaitingRuns } from '@/lib/flows/engine'
 
 /**
  * Sweep abandoned active flow runs.
@@ -46,6 +47,9 @@ export async function GET(request: Request) {
   }
 
   const admin = supabaseAdmin()
+  // Wait nodes first: a run whose wait just ended must carry on, not be
+  // swept as abandoned.
+  const resumed = await resumeWaitingRuns()
   const now = new Date()
 
   // Pull all currently-active runs along with their parent flow's
@@ -54,7 +58,7 @@ export async function GET(request: Request) {
   const { data: runs, error } = await admin
     .from('flow_runs')
     .select(
-      'id, flow_id, user_id, contact_id, last_advanced_at, flows ( fallback_policy )',
+      'id, flow_id, user_id, contact_id, last_advanced_at, resume_at, flows ( fallback_policy )',
     )
     .eq('status', 'active')
 
@@ -62,7 +66,7 @@ export async function GET(request: Request) {
     console.error('[flows-cron] active-run scan failed:', error.message)
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
-  if (!runs?.length) return NextResponse.json({ swept: 0 })
+  if (!runs?.length) return NextResponse.json({ swept: 0, resumed })
 
   type Row = {
     id: string
@@ -70,6 +74,7 @@ export async function GET(request: Request) {
     user_id: string
     contact_id: string | null
     last_advanced_at: string
+    resume_at: string | null
     flows: { fallback_policy: unknown } | { fallback_policy: unknown }[] | null
   }
 
@@ -77,6 +82,8 @@ export async function GET(request: Request) {
   for (const r of runs as Row[]) {
     const flowsField = Array.isArray(r.flows) ? r.flows[0] : r.flows
     const policy = resolveFallbackPolicy(flowsField?.fallback_policy ?? null)
+    // Still waiting on a wait node: not abandoned.
+    if (r.resume_at) continue
     const lastAdvanced = new Date(r.last_advanced_at)
     const ageHours = (now.getTime() - lastAdvanced.getTime()) / (1000 * 60 * 60)
     if (ageHours < policy.on_timeout_hours) continue
@@ -108,5 +115,5 @@ export async function GET(request: Request) {
     }
   }
 
-  return NextResponse.json({ swept })
+  return NextResponse.json({ swept, resumed })
 }

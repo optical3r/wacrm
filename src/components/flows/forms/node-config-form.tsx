@@ -213,21 +213,53 @@ export function NodeConfigForm({
         />
       );
 
+    case "wait":
+      return (
+        <WaitForm
+          cfg={cfg as { amount?: number; unit?: string; next_node_key?: string }}
+          allNodes={allNodes}
+          currentKey={node.node_key}
+          onUpdateConfig={onUpdateConfig}
+          t={t}
+        />
+      );
+
+    case "http_fetch":
+      return (
+        <HttpFetchForm
+          cfg={cfg as HttpFetchCfg}
+          allNodes={allNodes}
+          currentKey={node.node_key}
+          onUpdateConfig={onUpdateConfig}
+          t={t}
+        />
+      );
+
     case "handoff":
       return (
-        <TextRow
-          label={t("internalNote")}
-          value={(cfg as { note?: string }).note ?? ""}
-          onChange={(v) => onUpdateConfig({ note: v })}
-          rows={2}
+        <HandoffForm
+          cfg={cfg as { note?: string; assign_to?: string }}
+          onUpdateConfig={onUpdateConfig}
+          t={t}
         />
       );
 
     case "end":
       return (
-        <p className="text-xs text-muted-foreground">
-          {t("endNodeHelp")}
-        </p>
+        <>
+          <p className="text-xs text-muted-foreground">
+            {t("endNodeHelp")}
+          </p>
+          <label className="flex items-center gap-2 text-xs text-foreground">
+            <input
+              type="checkbox"
+              checked={Boolean((cfg as { close_conversation?: boolean }).close_conversation)}
+              onChange={(e) => onUpdateConfig({ close_conversation: e.target.checked })}
+              className="h-3.5 w-3.5 accent-primary"
+            />
+            {t("closeConversation")}
+          </label>
+        </>
       );
   }
 }
@@ -607,10 +639,12 @@ function SendListForm({
 // ============================================================
 
 interface ConditionCfg {
-  subject?: "var" | "tag" | "contact_field";
+  subject?: "var" | "tag" | "contact_field" | "business_hours";
   subject_key?: string;
   operator?: "equals" | "contains" | "present" | "absent";
   value?: string;
+  days?: number[];
+  timezone?: string;
   true_next?: string;
   false_next?: string;
 }
@@ -648,7 +682,18 @@ function ConditionForm({
           <Select
             value={subject}
             onValueChange={(v) =>
-              onUpdateConfig({ subject: v as ConditionCfg["subject"] })
+              onUpdateConfig(
+                v === "business_hours"
+                  ? {
+                      subject: v,
+                      subject_key: "",
+                      operator: "present",
+                      value: cfg.value && /^\d/.test(cfg.value) ? cfg.value : "08:00-18:00",
+                      days: cfg.days ?? [1, 2, 3, 4, 5],
+                      timezone: cfg.timezone ?? "America/Sao_Paulo",
+                    }
+                  : { subject: v as ConditionCfg["subject"] },
+              )
             }
           >
             <SelectTrigger className="bg-muted">
@@ -658,9 +703,13 @@ function ConditionForm({
               <SelectItem value="var">{t("capturedVariable")}</SelectItem>
               <SelectItem value="tag">{t("contactHasTag")}</SelectItem>
               <SelectItem value="contact_field">{t("contactField")}</SelectItem>
+              <SelectItem value="business_hours">{t("businessHours")}</SelectItem>
             </SelectContent>
           </Select>
         </div>
+        {subject === "business_hours" ? (
+          <BusinessHoursFields cfg={cfg} onUpdateConfig={onUpdateConfig} t={t} />
+        ) : (
         <div className="md:col-span-2">
           <label className="mb-1 block text-xs text-muted-foreground">
             {subject === "var"
@@ -711,8 +760,10 @@ function ConditionForm({
             />
           )}
         </div>
+        )}
       </div>
 
+      {subject !== "business_hours" && (
       <div
         className={cn(
           "grid grid-cols-1 gap-3",
@@ -749,6 +800,7 @@ function ConditionForm({
           </div>
         )}
       </div>
+      )}
 
       <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
         <NextNodeRow
@@ -756,16 +808,309 @@ function ConditionForm({
           allNodes={allNodes}
           currentKey={currentKey}
           onChange={(v) => onUpdateConfig({ true_next: v })}
-          label={t("ifTrueAdvance")}
+          label={subject === "business_hours" ? t("ifOpenAdvance") : t("ifTrueAdvance")}
         />
         <NextNodeRow
           value={cfg.false_next ?? ""}
           allNodes={allNodes}
           currentKey={currentKey}
           onChange={(v) => onUpdateConfig({ false_next: v })}
-          label={t("ifFalseAdvance")}
+          label={subject === "business_hours" ? t("ifClosedAdvance") : t("ifFalseAdvance")}
         />
       </div>
+    </>
+  );
+}
+
+const WEEKDAYS = [1, 2, 3, 4, 5, 6, 0];
+
+function BusinessHoursFields({
+  cfg,
+  onUpdateConfig,
+  t,
+}: {
+  cfg: ConditionCfg;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const [from = "08:00", to = "18:00"] = (cfg.value ?? "08:00-18:00").split("-");
+  const days = cfg.days ?? [1, 2, 3, 4, 5];
+  return (
+    <div className="flex flex-col gap-2 md:col-span-2">
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">{t("opensAt")}</label>
+          <Input
+            type="time"
+            value={from}
+            onChange={(e) => onUpdateConfig({ value: `${e.target.value}-${to}` })}
+            className="bg-muted text-xs"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">{t("closesAt")}</label>
+          <Input
+            type="time"
+            value={to}
+            onChange={(e) => onUpdateConfig({ value: `${from}-${e.target.value}` })}
+            className="bg-muted text-xs"
+          />
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-1">
+        {WEEKDAYS.map((d) => {
+          const on = days.includes(d);
+          return (
+            <button
+              key={d}
+              type="button"
+              aria-pressed={on}
+              onClick={() =>
+                onUpdateConfig({
+                  days: on ? days.filter((x) => x !== d) : [...days, d].sort(),
+                })
+              }
+              className={cn(
+                "rounded-md border px-2 py-1 text-[11px]",
+                on
+                  ? "border-primary bg-primary/10 text-primary"
+                  : "border-border text-muted-foreground hover:bg-muted",
+              )}
+            >
+              {t(`weekday${d}`)}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-[10px] text-muted-foreground">{t("businessHoursHelp")}</p>
+    </div>
+  );
+}
+
+// ============================================================
+// wait
+// ============================================================
+
+function WaitForm({
+  cfg,
+  allNodes,
+  currentKey,
+  onUpdateConfig,
+  t,
+}: {
+  cfg: { amount?: number; unit?: string; next_node_key?: string };
+  allNodes: BuilderNode[];
+  currentKey: string;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  return (
+    <>
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">{t("waitAmount")}</label>
+          <Input
+            type="number"
+            min={1}
+            value={cfg.amount ?? 30}
+            onChange={(e) =>
+              onUpdateConfig({ amount: Math.max(1, Math.round(Number(e.target.value) || 1)) })
+            }
+            className="bg-muted text-xs"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">{t("waitUnit")}</label>
+          <Select
+            value={cfg.unit ?? "minutes"}
+            onValueChange={(v) => onUpdateConfig({ unit: v })}
+          >
+            <SelectTrigger className="bg-muted">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="minutes">{t("unitMinutes")}</SelectItem>
+              <SelectItem value="hours">{t("unitHours")}</SelectItem>
+              <SelectItem value="days">{t("unitDays")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <p className="text-[10px] text-muted-foreground">{t("waitHelp")}</p>
+      <NextNodeRow
+        value={cfg.next_node_key ?? ""}
+        allNodes={allNodes}
+        currentKey={currentKey}
+        onChange={(v) => onUpdateConfig({ next_node_key: v })}
+        label={t("thenAdvanceTo")}
+      />
+    </>
+  );
+}
+
+// ============================================================
+// http_fetch (Webhook)
+// ============================================================
+
+interface HttpFetchCfg {
+  url?: string;
+  method?: "GET" | "POST";
+  body_template?: string;
+  headers_text?: string;
+  save_as?: string;
+  next_node_key?: string;
+  error_next?: string;
+}
+
+function HttpFetchForm({
+  cfg,
+  allNodes,
+  currentKey,
+  onUpdateConfig,
+  t,
+}: {
+  cfg: HttpFetchCfg;
+  allNodes: BuilderNode[];
+  currentKey: string;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const method = cfg.method ?? "POST";
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-4">
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">{t("httpMethod")}</label>
+          <Select value={method} onValueChange={(v) => onUpdateConfig({ method: v })}>
+            <SelectTrigger className="bg-muted">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="POST">POST</SelectItem>
+              <SelectItem value="GET">GET</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div className="md:col-span-3">
+          <label className="mb-1 block text-xs text-muted-foreground">URL</label>
+          <Input
+            value={cfg.url ?? ""}
+            onChange={(e) => onUpdateConfig({ url: e.target.value })}
+            placeholder="https://"
+            className="bg-muted font-mono text-xs"
+          />
+        </div>
+      </div>
+      {method === "POST" && (
+        <TextRow
+          label={t("httpBody")}
+          value={cfg.body_template ?? ""}
+          onChange={(v) => onUpdateConfig({ body_template: v })}
+          rows={4}
+        />
+      )}
+      <TextRow
+        label={t("httpHeaders")}
+        value={cfg.headers_text ?? ""}
+        onChange={(v) => onUpdateConfig({ headers_text: v })}
+        rows={2}
+      />
+      <div>
+        <label className="mb-1 block text-xs text-muted-foreground">{t("httpSaveAs")}</label>
+        <Input
+          value={cfg.save_as ?? ""}
+          onChange={(e) =>
+            onUpdateConfig({ save_as: e.target.value.replace(/[^a-zA-Z0-9_]/g, "") })
+          }
+          className="bg-muted font-mono text-xs"
+        />
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          {t("httpHelp")}{" "}
+          <code className="rounded bg-muted px-1">
+            {"{{vars."}
+            {cfg.save_as || "resposta"}
+            {".campo}}"}
+          </code>
+          {" · "}
+          <code className="rounded bg-muted px-1">{"{{contact.phone}}"}</code>
+        </p>
+      </div>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <NextNodeRow
+          value={cfg.next_node_key ?? ""}
+          allNodes={allNodes}
+          currentKey={currentKey}
+          onChange={(v) => onUpdateConfig({ next_node_key: v })}
+          label={t("httpOnSuccess")}
+        />
+        <NextNodeRow
+          value={cfg.error_next ?? ""}
+          allNodes={allNodes}
+          currentKey={currentKey}
+          onChange={(v) => onUpdateConfig({ error_next: v })}
+          label={t("httpOnError")}
+        />
+      </div>
+    </>
+  );
+}
+
+// ============================================================
+// handoff — assign to a teammate
+// ============================================================
+
+const NO_AGENT = "__none__";
+
+function HandoffForm({
+  cfg,
+  onUpdateConfig,
+  t,
+}: {
+  cfg: { note?: string; assign_to?: string };
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const [members, setMembers] = useState<Array<{ user_id: string; full_name: string | null }>>([]);
+  useEffect(() => {
+    let cancelled = false;
+    createClient()
+      .from("profiles")
+      .select("user_id, full_name")
+      .order("full_name")
+      .then(({ data }) => {
+        if (!cancelled && data) setMembers(data);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  return (
+    <>
+      <div>
+        <label className="mb-1 block text-xs text-muted-foreground">{t("assignToLabel")}</label>
+        <Select
+          value={cfg.assign_to || NO_AGENT}
+          onValueChange={(v) => onUpdateConfig({ assign_to: v === NO_AGENT ? "" : v })}
+        >
+          <SelectTrigger className="bg-muted">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={NO_AGENT}>{t("assignToNobody")}</SelectItem>
+            {members.map((m) => (
+              <SelectItem key={m.user_id} value={m.user_id}>
+                {m.full_name || m.user_id.slice(0, 8)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <TextRow
+        label={t("internalNote")}
+        value={cfg.note ?? ""}
+        onChange={(v) => onUpdateConfig({ note: v })}
+        rows={2}
+      />
     </>
   );
 }

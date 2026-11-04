@@ -47,6 +47,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { cn } from '@/lib/utils';
+import { useChannels } from '@/hooks/use-channels';
 import { type ValidationIssue } from '@/lib/flows/validate';
 import {
   NODE_META,
@@ -283,12 +284,18 @@ function TriggerPanel({
           <Select
             value={state.trigger_type}
             onValueChange={(v) =>
-              setState((s) => ({
-                ...s,
-                trigger_type: v as BuilderState['trigger_type'],
-                trigger_config:
-                  v === 'keyword' ? { keywords: [] } : v === 'manual' ? {} : {},
-              }))
+              setState((s) => {
+                // The number limit survives a trigger change.
+                const channel_ids = s.trigger_config.channel_ids;
+                const base: Record<string, unknown> = v === 'keyword' ? { keywords: [] } : {};
+                return {
+                  ...s,
+                  trigger_type: v as BuilderState['trigger_type'],
+                  trigger_config: Array.isArray(channel_ids) && channel_ids.length
+                    ? { ...base, channel_ids }
+                    : base,
+                };
+              })
             }
           >
             <SelectTrigger className="bg-muted">
@@ -329,6 +336,7 @@ function TriggerPanel({
           </div>
         )}
       </div>
+      <ChannelLimit state={state} setState={setState} t={t} />
       {triggerIssues.length > 0 && (
         <div className="mt-3 flex flex-col gap-1">
           {triggerIssues.map((i, ix) => (
@@ -337,6 +345,65 @@ function TriggerPanel({
         </div>
       )}
     </section>
+  );
+}
+
+// ============================================================
+// Numbers the flow listens on (accounts with several numbers)
+// ============================================================
+
+function ChannelLimit({
+  state,
+  setState,
+  t,
+}: {
+  state: BuilderState;
+  setState: React.Dispatch<React.SetStateAction<BuilderState>>;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const { channels } = useChannels(t('channelFallbackName'));
+  if (channels.length < 2 || state.trigger_type === 'manual') return null;
+  const raw = state.trigger_config.channel_ids;
+  const selected = Array.isArray(raw) ? (raw as string[]) : [];
+  const toggle = (id: string) =>
+    setState((s) => {
+      const cur = Array.isArray(s.trigger_config.channel_ids)
+        ? (s.trigger_config.channel_ids as string[])
+        : [];
+      const next = cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id];
+      const cfg = { ...s.trigger_config };
+      if (next.length) cfg.channel_ids = next;
+      else delete cfg.channel_ids;
+      return { ...s, trigger_config: cfg };
+    });
+  return (
+    <div className="mt-3">
+      <label className="text-muted-foreground mb-1 block text-xs">{t('channelsLabel')}</label>
+      <div className="flex flex-wrap gap-1.5">
+        {channels.map((c) => {
+          const on = selected.includes(c.id);
+          return (
+            <button
+              key={c.id}
+              type="button"
+              aria-pressed={on}
+              onClick={() => toggle(c.id)}
+              className={cn(
+                'rounded-md border px-2 py-1 text-xs',
+                on
+                  ? 'border-primary bg-primary/10 text-primary'
+                  : 'border-border text-muted-foreground hover:bg-muted',
+              )}
+            >
+              {c.name}
+            </button>
+          );
+        })}
+      </div>
+      <p className="text-muted-foreground mt-1 text-[10px]">
+        {selected.length === 0 ? t('channelsAll') : t('channelsSome', { count: selected.length })}
+      </p>
+    </div>
   );
 }
 
@@ -590,6 +657,8 @@ function AddNodeButton({ onAdd, t }: { onAdd: (type: NodeType) => void; t: Retur
     'condition',
     'set_tag',
     'create_deal',
+    'wait',
+    'http_fetch',
     'handoff',
     'end',
   ];

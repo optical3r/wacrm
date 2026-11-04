@@ -1376,7 +1376,36 @@
         "pickStage": "Escolha a etapa",
         "dealTitleLabel": "Título do negócio",
         "dealValueLabel": "Valor",
-        "dealHelp": "O título aceita respostas coletadas, como"
+        "dealHelp": "O título aceita respostas coletadas, como",
+        "businessHours": "Horário de atendimento",
+        "ifOpenAdvance": "Se estiver aberto, ir para",
+        "ifClosedAdvance": "Se estiver fechado, ir para",
+        "opensAt": "Abre às",
+        "closesAt": "Fecha às",
+        "businessHoursHelp": "Horário de Brasília. Marque os dias em que a loja abre.",
+        "waitAmount": "Esperar",
+        "waitUnit": "Unidade",
+        "unitMinutes": "Minutos",
+        "unitHours": "Horas",
+        "unitDays": "Dias",
+        "waitHelp": "O fluxo continua até 5 minutos depois do tempo marcado. Se o cliente responder durante a espera, a mensagem fica no inbox e o fluxo segue depois.",
+        "httpMethod": "Método",
+        "httpBody": "Corpo (JSON). Vazio: envia o contato e as respostas coletadas.",
+        "httpHeaders": "Cabeçalhos (um por linha, Nome: valor)",
+        "httpSaveAs": "Guardar a resposta em",
+        "httpHelp": "Use nos próximos blocos:",
+        "httpOnSuccess": "Se der certo, ir para",
+        "httpOnError": "Se der erro, ir para (opcional)",
+        "assignToLabel": "Atribuir a",
+        "assignToNobody": "Ninguém (só deixar pendente)",
+        "closeConversation": "Fechar a conversa ao terminar",
+        "weekday0": "Dom",
+        "weekday1": "Seg",
+        "weekday2": "Ter",
+        "weekday3": "Qua",
+        "weekday4": "Qui",
+        "weekday5": "Sex",
+        "weekday6": "Sáb"
       },
       "categories": {
         "messaging": "Mensagens",
@@ -1427,8 +1456,22 @@
         "create_deal": {
           "label": "Criar negócio",
           "blurb": "Cria um negócio no Pipeline para o contato"
+        },
+        "wait": {
+          "label": "Esperar",
+          "blurb": "Pausa o fluxo por minutos, horas ou dias"
+        },
+        "http_fetch": {
+          "label": "Webhook",
+          "blurb": "Chama um sistema externo e guarda a resposta"
         }
-      }
+      },
+      "slotOk": "Deu certo",
+      "slotError": "Deu erro",
+      "channelsLabel": "Números",
+      "channelsAll": "Nenhum marcado: o fluxo vale para todos os números.",
+      "channelsSome": "O fluxo só começa em mensagens que chegam {count, plural, one {neste número} other {nestes # números}}.",
+      "channelFallbackName": "Número"
     },
     "validation": {
       "noIssues": "Nenhum problema. Pronto para ativar.",
@@ -2594,7 +2637,12 @@
       "createDealNeedsStage": "O nó Criar negócio precisa de um funil e uma etapa.",
       "createDealNeedsTitle": "O nó Criar negócio precisa de um título.",
       "createDealNeedsNext": "O nó Criar negócio precisa apontar para um próximo nó.",
-      "createDealMissingNext": "O nó Criar negócio aponta para um nó inexistente: \"{key}\"."
+      "createDealMissingNext": "O nó Criar negócio aponta para um nó inexistente: \"{key}\".",
+      "businessHoursInvalid": "Informe o horário de abertura e de fechamento.",
+      "waitInvalid": "A espera precisa ser de pelo menos 1 minuto e no máximo 30 dias.",
+      "httpNeedsUrl": "O Webhook precisa de uma URL que comece com https://.",
+      "nodeNeedsNext": "Este nó precisa apontar para um próximo nó.",
+      "nodeMissingNext": "Este nó aponta para um nó inexistente: \"{key}\"."
     },
     "automations": {
       "needsStep": "automações ativas precisam de pelo menos uma etapa",

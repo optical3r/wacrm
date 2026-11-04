@@ -189,6 +189,10 @@ export function defaultConfigFor(type: NodeType): Record<string, unknown> {
       return { mode: "add", tag_id: "", next_node_key: "" };
     case "create_deal":
       return { pipeline_id: "", stage_id: "", title: "{{vars.nome}}", value: 0, next_node_key: "" };
+    case "wait":
+      return { amount: 30, unit: "minutes", next_node_key: "" };
+    case "http_fetch":
+      return { url: "", method: "POST", body_template: "", headers_text: "", save_as: "resposta", next_node_key: "", error_next: "" };
     case "handoff":
       return { note: "" };
     case "end":
