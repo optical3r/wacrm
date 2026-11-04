@@ -545,15 +545,21 @@ export function MessageThread({
       .then(({ error }) => {
         if (error) console.error("Failed to reset unread_count:", error);
       });
-    // Read on WhatsApp too (blue ticks, cleared on the phone). Viewers
-    // only look: they leave the customer's messages unread.
-    if (canSendMessages) {
-      void fetch("/api/whatsapp/read", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ conversation_id: conversationId }),
-      }).catch(() => undefined);
-    }
+  }, [conversationId, hasUnread]);
+
+  // Read on WhatsApp too (blue ticks, cleared on the phone): on every
+  // open, and again whenever new messages arrive while the chat is open.
+  // Runs even when the CRM already shows 0 unread, because the phone can
+  // still have them pending. Viewers only look: they leave the
+  // customer's messages unread. The server answers fast when nothing is
+  // pending.
+  useEffect(() => {
+    if (!conversationId || !canSendMessages) return;
+    void fetch("/api/whatsapp/read", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ conversation_id: conversationId }),
+    }).catch(() => undefined);
   }, [conversationId, hasUnread, canSendMessages]);
 
   // Auto-scroll to bottom on new messages

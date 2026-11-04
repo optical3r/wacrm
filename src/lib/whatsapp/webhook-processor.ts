@@ -598,7 +598,7 @@ async function handleStatusUpdate(status: {
   // A receipt for the CUSTOMER's message means this number read it (on
   // the phone, or the CRM marked it): the chat stops counting it unread.
   if (status.status === 'read') {
-    await applyPhoneRead(supabaseAdmin(), status.id).catch((err: unknown) => {
+    await applyPhoneRead(supabaseAdmin(), status.id, status.timestamp).catch((err: unknown) => {
       console.warn('[webhook] phone read sync failed:', err instanceof Error ? err.message : err)
     })
   }

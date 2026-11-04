@@ -66,19 +66,23 @@ export async function markConversationReadOnWhatsApp(
     contact: { phone?: string | null; wa_user_id?: string | null; is_group?: boolean | null; wa_group_id?: string | null } | null
   }
   const target = resolveContactSendTarget(row.contact)
-  if (!target) return 0
+  if (!target) {
+    console.info(`[mark-read] ${conversationId}: contato sem destino`)
+    return 0
+  }
 
   const since = new Date(Date.now() - LOOKBACK_MS).toISOString()
-  const { data: pending } = await db
+  const { data: pending, error: pendingErr } = await db
     .from('messages')
     .select('id, message_id, channel_id, sender_wa_id, created_at')
     .eq('conversation_id', conversationId)
     .eq('sender_type', 'customer')
-    .neq('status', 'read')
+    .in('status', ['sent', 'delivered'])
     .not('message_id', 'is', null)
     .gte('created_at', since)
     .order('created_at', { ascending: false })
     .limit(MAX_MESSAGES)
+  if (pendingErr) console.warn('[mark-read] pending query failed:', pendingErr.message)
   const rows = (pending ?? []) as PendingRow[]
   if (rows.length === 0) return 0
 
@@ -98,7 +102,10 @@ export async function markConversationReadOnWhatsApp(
   const done: string[] = []
   for (const [channelId, list] of groups) {
     const channel = byId.get(channelId)
-    if (!channel || channel.status !== 'connected') continue
+    if (!channel || channel.status !== 'connected') {
+      console.info(`[mark-read] ${conversationId}: número ${channelId} não conectado, ${list.length} pendentes`)
+      continue
+    }
     try {
       if (isDapiPhoneNumberId(channel.phone_number_id)) {
         // Groups: one call per participant who wrote.
@@ -133,15 +140,36 @@ export async function markConversationReadOnWhatsApp(
   if (done.length > 0) {
     await db.from('messages').update({ status: 'read' }).in('id', done)
   }
+  console.info(`[mark-read] ${conversationId}: ${done.length}/${rows.length} marcadas como lidas no WhatsApp`)
   return done.length
 }
 
 /**
- * A read receipt came in for one of the customer's messages: the number
- * itself read it (on the phone, or because the CRM marked it). The chat's
- * unread count drops to what arrived after that message.
+ * When the phone read a chat, from a read receipt: the later of the
+ * receipt's own time (unix seconds) and the message's time, so a clock
+ * skew between the phone and WhatsApp never leaves the message unread.
  */
-export async function applyPhoneRead(db: Db, messageId: string): Promise<void> {
+export function readCutoff(messageCreatedAt: string, receiptSeconds?: string | number | null): string {
+  const msg = Date.parse(messageCreatedAt)
+  const n = Number(receiptSeconds)
+  const receipt = Number.isFinite(n) && n > 0 ? n * 1000 : NaN
+  const t = Number.isNaN(receipt) ? msg : Math.max(msg, receipt)
+  return new Date(Number.isNaN(t) ? Date.now() : t).toISOString()
+}
+
+/**
+ * A read receipt came in for one of the customer's messages: this number
+ * opened the chat (on the phone, or because the CRM marked it). WhatsApp
+ * only sends receipts for some of the messages it shows, often for old
+ * ones, so the receipt is taken as "the chat was read up to now":
+ * everything the customer sent until the read time counts as read, and
+ * the unread count drops to what arrived after it.
+ */
+export async function applyPhoneRead(
+  db: Db,
+  messageId: string,
+  receiptSeconds?: string | number | null,
+): Promise<void> {
   const { data } = await db
     .from('messages')
     .select('conversation_id, created_at')
@@ -149,12 +177,20 @@ export async function applyPhoneRead(db: Db, messageId: string): Promise<void> {
     .eq('sender_type', 'customer')
     .limit(5)
   for (const m of (data ?? []) as Array<{ conversation_id: string; created_at: string }>) {
+    const cutoff = readCutoff(m.created_at, receiptSeconds)
+    await db
+      .from('messages')
+      .update({ status: 'read' })
+      .eq('conversation_id', m.conversation_id)
+      .eq('sender_type', 'customer')
+      .in('status', ['sent', 'delivered'])
+      .lte('created_at', cutoff)
     const { count } = await db
       .from('messages')
       .select('id', { count: 'exact', head: true })
       .eq('conversation_id', m.conversation_id)
       .eq('sender_type', 'customer')
-      .gt('created_at', m.created_at)
+      .gt('created_at', cutoff)
     const remaining = count ?? 0
     await db
       .from('conversations')

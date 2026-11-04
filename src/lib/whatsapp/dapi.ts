@@ -240,8 +240,11 @@ export async function dapiMarkRead(args: {
     messageIds: args.messageIds,
     ...(args.participant ? { participant: args.participant } : {}),
   })
-  const r = res as unknown as { error?: unknown; success?: unknown }
-  if (r && typeof r.error === 'string' && r.success !== true) throw new Error(r.error)
+  const r = res as unknown as { error?: unknown; success?: unknown; message?: unknown }
+  if (r && (r.success === false || (r.error && r.success !== true))) {
+    const why = typeof r.message === 'string' ? r.message : typeof r.error === 'string' ? r.error : 'recusado'
+    throw new Error(`D-API markAsRead: ${why}`)
+  }
 }
 
 export async function dapiSendTyping(args: { phoneNumberId: string; to?: string; messageId: string }) {
