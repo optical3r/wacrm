@@ -111,10 +111,8 @@ export interface HandoffNodeConfig {
  * Captures the customer's next free-text reply into
  * `flow_runs.vars[var_key]`, then advances.
  *
- * v1.5 ships without runtime validation (`validation` is accepted on
- * the config for forward compat but ignored by the runner); the
- * builder still surfaces the field so users can author flows that
- * v2 will start enforcing.
+ * `validation` is enforced by the runner: a reply in the wrong format
+ * is treated as an unknown reply and the prompt is sent again.
  */
 export interface CollectInputNodeConfig {
   /** Prompt text sent to the customer before they reply. */
@@ -126,12 +124,14 @@ export interface CollectInputNodeConfig {
    */
   var_key: string;
   /**
-   * Reserved for v2. Accepted on the config but ignored by the v1.5
-   * runner — captures any non-empty text.
+   * Format the reply must have. A reply that does not match counts as
+   * an unknown reply: the prompt is sent again (fallback policy).
    */
   validation?: "any" | "email" | "phone" | "regex";
   /** Used only when `validation === 'regex'`. */
   regex?: string;
+  /** Also write the captured text to this field of the contact. */
+  save_to?: "name" | "email" | "company";
   /** Node to advance to after capture. */
   next_node_key: string;
 }
@@ -173,6 +173,16 @@ export interface SetTagNodeConfig {
   next_node_key: string;
 }
 
+/** Creates a deal for the contact in a pipeline stage, then advances. */
+export interface CreateDealNodeConfig {
+  pipeline_id: string;
+  stage_id: string;
+  /** Deal title; can interpolate {{vars.X}}. */
+  title: string;
+  value?: number;
+  next_node_key: string;
+}
+
 // Terminal nodes carry no config — they just stop the run.
 export type EndNodeConfig = Record<string, never>;
 
@@ -193,6 +203,7 @@ export type FlowNodeConfig =
   | { node_type: "collect_input"; config: CollectInputNodeConfig }
   | { node_type: "condition"; config: ConditionNodeConfig }
   | { node_type: "set_tag"; config: SetTagNodeConfig }
+  | { node_type: "create_deal"; config: CreateDealNodeConfig }
   | { node_type: "handoff"; config: HandoffNodeConfig }
   | { node_type: "end"; config: EndNodeConfig };
 

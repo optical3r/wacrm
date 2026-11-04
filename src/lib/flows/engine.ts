@@ -40,12 +40,13 @@ import {
   engineSendText,
 } from "./meta-send";
 import { decideFallback, isExitMessage, resolveFallbackPolicy } from "./fallback";
-import { foldKeywordText } from "./engine-match";
+import { foldKeywordText, isValidCollectedInput } from "./engine-match";
 import { addContactTagAndDispatch } from "@/lib/contacts/tag-events";
 import { removeContactTag } from "@/lib/contacts/tag-write";
 import {
   type CollectInputNodeConfig,
   type ConditionNodeConfig,
+  type CreateDealNodeConfig,
   type DispatchInboundInput,
   type DispatchInboundResult,
   type FlowNodeRow,
@@ -148,7 +149,8 @@ export function isAutoAdvancing(node_type: string): boolean {
     node_type === "send_message" ||
     node_type === "send_media" ||
     node_type === "condition" ||
-    node_type === "set_tag"
+    node_type === "set_tag" ||
+    node_type === "create_deal"
   );
 }
 
@@ -807,6 +809,52 @@ async function advanceFromNodeKey(
       currentKey = cfg.next_node_key;
       continue;
     }
+    if (node.node_type === "create_deal") {
+      const cfg = node.config as unknown as CreateDealNodeConfig;
+      try {
+        if (!cfg.pipeline_id || !cfg.stage_id) {
+          throw new Error("create_deal needs a pipeline and a stage");
+        }
+        // Same currency rule as the automations create_deal step: the
+        // account's default, USD for pre-021 rows.
+        const { data: acct } = await db
+          .from("accounts")
+          .select("default_currency")
+          .eq("id", run.account_id)
+          .maybeSingle();
+        const { data: deal, error } = await db
+          .from("deals")
+          .insert({
+            account_id: run.account_id,
+            user_id: run.user_id,
+            pipeline_id: cfg.pipeline_id,
+            stage_id: cfg.stage_id,
+            contact_id: run.contact_id,
+            title:
+              interpolateVars(cfg.title ?? "", run.vars).trim() || "Flow",
+            value: Number(cfg.value) || 0,
+            currency:
+              (acct as { default_currency?: string } | null)
+                ?.default_currency ?? "USD",
+            status: "open",
+          })
+          .select("id")
+          .single();
+        if (error) throw new Error(error.message);
+        await logEvent(db, run.id, "node_entered", node.node_key, {
+          node_type: "create_deal",
+          deal_id: (deal as { id: string }).id,
+        });
+      } catch (err) {
+        // Non-fatal, like set_tag: the customer keeps going.
+        await logEvent(db, run.id, "error", node.node_key, {
+          reason: "create_deal_failed",
+          detail: err instanceof Error ? err.message : String(err),
+        });
+      }
+      currentKey = cfg.next_node_key;
+      continue;
+    }
     if (node.node_type === "send_buttons") {
       // Same failure contract as send_message / send_media /
       // collect_input above: log + fail the run. Previously an
@@ -981,6 +1029,34 @@ export async function dispatchInboundToFlows(
   }
 }
 
+/**
+ * collect_input `save_to`: copy the captured answer into the contact's
+ * record. Only name, email and company, same list as the automations
+ * update_contact_field step. Failure is logged and never blocks the run.
+ */
+async function saveCapturedToContact(
+  db: AdminClient,
+  run: FlowRunRow,
+  nodeKey: string,
+  field: "name" | "email" | "company",
+  value: string,
+): Promise<void> {
+  if (field !== "name" && field !== "email" && field !== "company") return;
+  const stored = field === "email" ? value.toLowerCase() : value;
+  const { error } = await db
+    .from("contacts")
+    .update({ [field]: stored.slice(0, 255) })
+    .eq("id", run.contact_id!)
+    .eq("account_id", run.account_id);
+  if (error) {
+    await logEvent(db, run.id, "error", nodeKey, {
+      reason: "save_to_contact_failed",
+      field,
+      detail: error.message,
+    });
+  }
+}
+
 async function handleReplyForActiveRun(
   db: AdminClient,
   run: FlowRunRow,
@@ -1050,7 +1126,13 @@ async function handleReplyForActiveRun(
   ) {
     const cfg = currentNode.config as unknown as CollectInputNodeConfig;
     const captured = message.text.trim();
-    if (captured.length > 0 && cfg.var_key) {
+    const valid = isValidCollectedInput(captured, cfg.validation, cfg.regex);
+    if (!valid && captured.length > 0) {
+      await logEvent(db, run.id, "node_entered", currentNode.node_key, {
+        validation_failed: cfg.validation ?? "any",
+      });
+    }
+    if (valid && cfg.var_key) {
       // Persist captured value + reset reprompt count atomically.
       const newVars = { ...run.vars, [cfg.var_key]: captured };
       const { error: capErr } = await db
@@ -1070,6 +1152,9 @@ async function handleReplyForActiveRun(
           captured_key: cfg.var_key,
           captured_length: captured.length,
         });
+        if (cfg.save_to && run.contact_id) {
+          await saveCapturedToContact(db, run, currentNode.node_key, cfg.save_to, captured);
+        }
         matched = cfg.next_node_key;
       }
     }
@@ -1126,8 +1211,8 @@ async function handleReplyForActiveRun(
       } else if (currentNode.node_type === "send_list") {
         await sendListAndSuspend(db, run, currentNode);
       } else if (currentNode.node_type === "collect_input") {
-        // Customer typed something we couldn't accept (empty after trim,
-        // or var_key missing — rare). Re-send the prompt so they try again.
+        // Customer typed something we couldn't accept (empty, or not in
+        // the node's format). Re-send the prompt so they try again.
         const cfg = currentNode.config as unknown as CollectInputNodeConfig;
         await engineSendText({
           accountId: run.account_id,
@@ -1229,4 +1314,82 @@ async function startNewRun(
     flow_run_id: run.id,
     outcome: outcome.outcome === "advanced" ? "started" : outcome.outcome,
   };
+}
+
+// ============================================================
+// Manual start (inbox "Iniciar fluxo")
+// ============================================================
+
+export type ManualStartResult =
+  | { ok: true; flow_run_id: string; outcome: string }
+  | {
+      ok: false;
+      reason: "flow_not_found" | "flow_inactive" | "already_in_flow" | "start_failed";
+    };
+
+/**
+ * Starts `flowId` for the contact of a conversation, on an agent's
+ * request. The caller has already checked that the agent may act on
+ * the conversation and that both belong to `accountId`. Any active
+ * flow can be started this way, whatever its trigger. One active run
+ * per contact still holds: a contact already in a flow is refused.
+ */
+export async function startFlowManually(args: {
+  accountId: string;
+  flowId: string;
+  conversationId: string;
+  contactId: string;
+}): Promise<ManualStartResult> {
+  const db = supabaseAdmin();
+  const flow = await loadFlow(db, args.flowId);
+  if (!flow || flow.account_id !== args.accountId) {
+    return { ok: false, reason: "flow_not_found" };
+  }
+  if (flow.status !== "active" || !flow.entry_node_id) {
+    return { ok: false, reason: "flow_inactive" };
+  }
+  const { data: existing } = await db
+    .from("flow_runs")
+    .select("id")
+    .eq("account_id", args.accountId)
+    .eq("contact_id", args.contactId)
+    .eq("status", "active")
+    .limit(1)
+    .maybeSingle();
+  if (existing) return { ok: false, reason: "already_in_flow" };
+
+  const { data: inserted, error } = await db
+    .from("flow_runs")
+    .insert({
+      flow_id: flow.id,
+      account_id: flow.account_id,
+      user_id: flow.user_id,
+      contact_id: args.contactId,
+      conversation_id: args.conversationId,
+      status: "active",
+      current_node_key: flow.entry_node_id,
+    })
+    .select("*")
+    .maybeSingle();
+  if (error || !inserted) {
+    const msg = error?.message ?? "";
+    if (msg.includes("23505") || msg.includes("duplicate key")) {
+      return { ok: false, reason: "already_in_flow" };
+    }
+    console.error("[flows] startFlowManually insert error:", msg);
+    return { ok: false, reason: "start_failed" };
+  }
+  const run = inserted as FlowRunRow;
+  await logEvent(db, run.id, "started", flow.entry_node_id, {
+    flow_id: flow.id,
+    trigger_type: "manual",
+  });
+  const { error: incErr } = await db.rpc("increment_flow_execution_count", {
+    p_flow_id: flow.id,
+  });
+  if (incErr) console.error("[flows] execution_count rpc error:", incErr.message);
+
+  const nodes = await loadAllNodes(db, flow.id);
+  const outcome = await advanceFromNodeKey(db, run, flow.entry_node_id, nodes);
+  return { ok: true, flow_run_id: run.id, outcome: outcome.outcome };
 }

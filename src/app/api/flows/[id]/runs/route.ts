@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@/lib/supabase/server'
 import { getT } from '@/lib/i18n/translate'
+import { buildFunnel } from '@/lib/flows/funnel'
 
 const t = getT('Api')
 
@@ -37,7 +38,7 @@ export async function GET(
   // the run query — gives us a clean 404 instead of empty array.
   const { data: flow } = await supabase
     .from('flows')
-    .select('id, name')
+    .select('id, name, entry_node_id')
     .eq('id', id)
     .maybeSingle()
   if (!flow) {
@@ -81,9 +82,42 @@ export async function GET(
     }
   }
 
+  // Funnel: runs that reached each node (all runs, not just the 50
+  // above) + runs per status. flow_funnel comes from migration 054;
+  // until it is applied the page simply hides the funnel.
+  let funnel: {
+    steps: ReturnType<typeof buildFunnel>
+    statuses: Record<string, number>
+  } | null = null
+  const [{ data: funnelData, error: funnelErr }, { data: nodeRows }] =
+    await Promise.all([
+      supabase.rpc('flow_funnel', { p_flow_id: id }),
+      supabase
+        .from('flow_nodes')
+        .select('node_key, node_type, config')
+        .eq('flow_id', id),
+    ])
+  if (funnelErr) {
+    console.error('[flows-runs] funnel rpc failed:', funnelErr.message)
+  } else if (funnelData) {
+    const f = funnelData as {
+      nodes?: Record<string, number>
+      statuses?: Record<string, number>
+    }
+    funnel = {
+      steps: buildFunnel(
+        (nodeRows ?? []) as Parameters<typeof buildFunnel>[0],
+        (flow as { entry_node_id?: string | null }).entry_node_id ?? null,
+        f.nodes ?? {},
+      ),
+      statuses: f.statuses ?? {},
+    }
+  }
+
   return NextResponse.json({
-    flow,
+    flow: { id: flow.id, name: flow.name },
     runs: runs ?? [],
     events,
+    funnel,
   })
 }

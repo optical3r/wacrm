@@ -173,6 +173,7 @@ export function defaultConfigFor(type: NodeType): Record<string, unknown> {
       return {
         prompt_text: "",
         var_key: "answer",
+        validation: "any",
         next_node_key: "",
       };
     case "condition":
@@ -186,6 +187,8 @@ export function defaultConfigFor(type: NodeType): Record<string, unknown> {
       };
     case "set_tag":
       return { mode: "add", tag_id: "", next_node_key: "" };
+    case "create_deal":
+      return { pipeline_id: "", stage_id: "", title: "{{vars.nome}}", value: 0, next_node_key: "" };
     case "handoff":
       return { note: "" };
     case "end":

@@ -46,6 +46,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { createClient } from "@/lib/supabase/client";
 import { uploadAccountMedia, MEDIA_MAX_BYTES } from "@/lib/storage/upload-media";
 import { slugify, type BuilderNode } from "../shared";
 import { NextNodeRow, NodeKeySelect, TextRow } from "./fields";
@@ -164,6 +165,11 @@ export function NodeConfigForm({
               .
             </p>
           </div>
+          <CollectInputExtras
+            cfg={cfg as CollectInputCfg}
+            onUpdateConfig={onUpdateConfig}
+            t={t}
+          />
           <NextNodeRow
             value={(cfg as { next_node_key?: string }).next_node_key ?? ""}
             allNodes={allNodes}
@@ -189,6 +195,17 @@ export function NodeConfigForm({
       return (
         <SetTagForm
           cfg={cfg as SetTagCfg}
+          allNodes={allNodes}
+          currentKey={node.node_key}
+          onUpdateConfig={onUpdateConfig}
+          t={t}
+        />
+      );
+
+    case "create_deal":
+      return (
+        <CreateDealForm
+          cfg={cfg as CreateDealCfg}
           allNodes={allNodes}
           currentKey={node.node_key}
           onUpdateConfig={onUpdateConfig}
@@ -825,6 +842,221 @@ function SetTagForm({
             />
           )}
         </div>
+      </div>
+      <NextNodeRow
+        value={cfg.next_node_key ?? ""}
+        allNodes={allNodes}
+        currentKey={currentKey}
+        onChange={(v) => onUpdateConfig({ next_node_key: v })}
+        label={t("thenAdvanceTo")}
+      />
+    </>
+  );
+}
+
+// ============================================================
+// collect_input — format check + save to contact
+// ============================================================
+
+interface CollectInputCfg {
+  validation?: "any" | "email" | "phone" | "regex";
+  regex?: string;
+  save_to?: "name" | "email" | "company";
+}
+
+const NO_SAVE = "__none__";
+
+function CollectInputExtras({
+  cfg,
+  onUpdateConfig,
+  t,
+}: {
+  cfg: CollectInputCfg;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const validation = cfg.validation ?? "any";
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">
+            {t("validationLabel")}
+          </label>
+          <Select
+            value={validation}
+            onValueChange={(v) => onUpdateConfig({ validation: v })}
+          >
+            <SelectTrigger className="bg-muted">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="any">{t("validationAny")}</SelectItem>
+              <SelectItem value="email">{t("validationEmail")}</SelectItem>
+              <SelectItem value="phone">{t("validationPhone")}</SelectItem>
+              <SelectItem value="regex">{t("validationRegex")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">
+            {t("saveToLabel")}
+          </label>
+          <Select
+            value={cfg.save_to ?? NO_SAVE}
+            onValueChange={(v) =>
+              onUpdateConfig({ save_to: v === NO_SAVE ? undefined : v })
+            }
+          >
+            <SelectTrigger className="bg-muted">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={NO_SAVE}>{t("saveToNone")}</SelectItem>
+              <SelectItem value="name">{t("saveToName")}</SelectItem>
+              <SelectItem value="email">{t("saveToEmail")}</SelectItem>
+              <SelectItem value="company">{t("saveToCompany")}</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      {validation === "regex" && (
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">
+            {t("regexLabel")}
+          </label>
+          <Input
+            value={cfg.regex ?? ""}
+            onChange={(e) => onUpdateConfig({ regex: e.target.value })}
+            placeholder={"^\\d{5}-?\\d{3}$"}
+            className="bg-muted font-mono text-xs"
+          />
+        </div>
+      )}
+      {validation !== "any" && (
+        <p className="text-[10px] text-muted-foreground">{t("validationHelp")}</p>
+      )}
+    </>
+  );
+}
+
+// ============================================================
+// create_deal
+// ============================================================
+
+interface CreateDealCfg {
+  pipeline_id?: string;
+  stage_id?: string;
+  title?: string;
+  value?: number;
+  next_node_key?: string;
+}
+
+function CreateDealForm({
+  cfg,
+  allNodes,
+  currentKey,
+  onUpdateConfig,
+  t,
+}: {
+  cfg: CreateDealCfg;
+  allNodes: BuilderNode[];
+  currentKey: string;
+  onUpdateConfig: (patch: Record<string, unknown>) => void;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const [pipelines, setPipelines] = useState<Array<{ id: string; name: string }>>([]);
+  const [stages, setStages] = useState<
+    Array<{ id: string; name: string; pipeline_id: string; position: number }>
+  >([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const supabase = createClient();
+      const [p, s] = await Promise.all([
+        supabase.from("pipelines").select("id, name").order("created_at"),
+        supabase
+          .from("pipeline_stages")
+          .select("id, name, pipeline_id, position")
+          .order("position"),
+      ]);
+      if (cancelled) return;
+      if (p.data) setPipelines(p.data);
+      if (s.data) setStages(s.data);
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const pipelineStages = stages.filter((s) => s.pipeline_id === cfg.pipeline_id);
+
+  return (
+    <>
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">{t("pipelineLabel")}</label>
+          <Select
+            value={cfg.pipeline_id ?? ""}
+            onValueChange={(v) => {
+              const first = stages.find((s) => s.pipeline_id === v);
+              onUpdateConfig({ pipeline_id: v, stage_id: first?.id ?? "" });
+            }}
+          >
+            <SelectTrigger className="bg-muted">
+              <SelectValue placeholder={t("pickPipeline")} />
+            </SelectTrigger>
+            <SelectContent>
+              {pipelines.map((p) => (
+                <SelectItem key={p.id} value={p.id}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <div>
+          <label className="mb-1 block text-xs text-muted-foreground">{t("stageLabel")}</label>
+          <Select
+            value={cfg.stage_id ?? ""}
+            onValueChange={(v) => onUpdateConfig({ stage_id: v })}
+            disabled={!cfg.pipeline_id}
+          >
+            <SelectTrigger className="bg-muted">
+              <SelectValue placeholder={t("pickStage")} />
+            </SelectTrigger>
+            <SelectContent>
+              {pipelineStages.map((s) => (
+                <SelectItem key={s.id} value={s.id}>
+                  {s.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      <TextRow
+        label={t("dealTitleLabel")}
+        value={cfg.title ?? ""}
+        onChange={(v) => onUpdateConfig({ title: v })}
+        rows={1}
+      />
+      <div>
+        <label className="mb-1 block text-xs text-muted-foreground">{t("dealValueLabel")}</label>
+        <Input
+          type="number"
+          min={0}
+          step="0.01"
+          value={cfg.value ?? 0}
+          onChange={(e) =>
+            onUpdateConfig({ value: Math.max(0, Number(e.target.value) || 0) })
+          }
+          className="bg-muted text-xs"
+        />
+        <p className="mt-1 text-[10px] text-muted-foreground">
+          {t("dealHelp")} <code className="rounded bg-muted px-1">{"{{vars.nome}}"}</code>
+        </p>
       </div>
       <NextNodeRow
         value={cfg.next_node_key ?? ""}

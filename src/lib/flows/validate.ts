@@ -46,7 +46,7 @@ interface FlowInput {
   entry_node_id: string | null;
 }
 
-interface NodeInput {
+export interface NodeInput {
   node_key: string;
   node_type: string;
   config: Record<string, unknown>;
@@ -550,7 +550,28 @@ function validateNode(
         prompt_text?: string;
         var_key?: string;
         next_node_key?: string;
+        validation?: string;
+        regex?: string;
       };
+      if (cfg.validation === "regex") {
+        let ok = Boolean(cfg.regex?.trim());
+        if (ok) {
+          try {
+            new RegExp(cfg.regex!, "u");
+          } catch {
+            ok = false;
+          }
+        }
+        if (!ok) {
+          issues.push({
+            severity: "error",
+            scope: "node",
+            node_key: node.node_key,
+            field: "regex",
+            message: t("collectInvalidRegex"),
+          });
+        }
+      }
       if (!cfg.prompt_text?.trim()) {
         issues.push({
           severity: "error",
@@ -716,6 +737,51 @@ function validateNode(
       break;
     }
 
+    case "create_deal": {
+      const cfg = node.config as {
+        pipeline_id?: string;
+        stage_id?: string;
+        title?: string;
+        next_node_key?: string;
+      };
+      if (!cfg.pipeline_id || !cfg.stage_id) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "stage_id",
+          message: t("createDealNeedsStage"),
+        });
+      }
+      if (!cfg.title?.trim()) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "title",
+          message: t("createDealNeedsTitle"),
+        });
+      }
+      if (!cfg.next_node_key) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "next_node_key",
+          message: t("createDealNeedsNext"),
+        });
+      } else if (!knownKeys.has(cfg.next_node_key)) {
+        issues.push({
+          severity: "error",
+          scope: "node",
+          node_key: node.node_key,
+          field: "next_node_key",
+          message: t("createDealMissingNext", { key: cfg.next_node_key }),
+        });
+      }
+      break;
+    }
+
     case "handoff":
     case "end":
       // Terminal nodes have no outgoing edges; nothing to validate
@@ -760,13 +826,14 @@ export function reachableFromEntry(
   return visited;
 }
 
-function outgoingEdges(node: NodeInput): string[] {
+export function outgoingEdges(node: NodeInput): string[] {
   switch (node.node_type) {
     case "start":
     case "send_message":
     case "send_media":
     case "collect_input":
-    case "set_tag": {
+    case "set_tag":
+    case "create_deal": {
       const cfg = node.config as { next_node_key?: string };
       return cfg.next_node_key ? [cfg.next_node_key] : [];
     }

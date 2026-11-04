@@ -21,6 +21,7 @@ import { useTranslations } from "next-intl";
 
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
+import { NODE_META, NodeIconChip, type NodeType } from "@/components/flows/shared";
 
 /**
  * Run history viewer.
@@ -49,6 +50,11 @@ interface RunRow {
   vars: Record<string, unknown>;
   reprompt_count: number;
   contact: { id: string; name: string | null; phone: string } | null;
+}
+
+interface FunnelData {
+  steps: Array<{ node_key: string; node_type: string; runs: number }>;
+  statuses: Record<string, number>;
 }
 
 interface EventRow {
@@ -101,6 +107,7 @@ export default function FlowRunsPage() {
   const [loading, setLoading] = useState(true);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [notFound, setNotFound] = useState(false);
+  const [funnel, setFunnel] = useState<FunnelData | null>(null);
 
   useEffect(() => {
     if (!params.id) return;
@@ -117,11 +124,13 @@ export default function FlowRunsPage() {
           flow: { id: string; name: string };
           runs: RunRow[];
           events: EventRow[];
+          funnel?: FunnelData | null;
         };
         if (!cancelled) {
           setFlow(json.flow);
           setRuns(json.runs ?? []);
           setEvents(json.events ?? []);
+          setFunnel(json.funnel ?? null);
         }
       } catch (err) {
         if (!cancelled) {
@@ -183,6 +192,8 @@ export default function FlowRunsPage() {
         {t("description")}
       </p>
 
+      {funnel && runs.length > 0 && <FunnelCard funnel={funnel} t={t} />}
+
       {runs.length === 0 ? (
         <div className="mt-6 rounded-lg border border-dashed border-border bg-card/50 px-6 py-12 text-center text-sm text-muted-foreground">
           {t("emptyState")}
@@ -201,6 +212,82 @@ export default function FlowRunsPage() {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+const STATUS_ORDER: Array<{ key: RunRow["status"]; label: string }> = [
+  { key: "completed", label: "statusCompleted" },
+  { key: "handed_off", label: "statusHandedOff" },
+  { key: "active", label: "statusActive" },
+  { key: "timed_out", label: "statusTimedOut" },
+  { key: "paused_by_agent", label: "statusPaused" },
+  { key: "failed", label: "statusFailed" },
+];
+
+function FunnelCard({
+  funnel,
+  t,
+}: {
+  funnel: FunnelData;
+  t: ReturnType<typeof useTranslations>;
+}) {
+  const tNodes = useTranslations("Flows.builder.nodes");
+  const total = Object.values(funnel.statuses).reduce((a, b) => a + Number(b), 0);
+  const top = Math.max(total, ...funnel.steps.map((s) => s.runs), 1);
+  return (
+    <div className="mt-6 rounded-lg border border-border bg-card p-4">
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 className="text-sm font-semibold text-foreground">{t("funnelTitle")}</h2>
+        <span className="text-xs text-muted-foreground">
+          {t("funnelTotal", { count: total })}
+        </span>
+      </div>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {STATUS_ORDER.filter((s) => Number(funnel.statuses[s.key] ?? 0) > 0).map((s) => {
+          const meta = STATUS_META[s.key];
+          const Icon = meta.icon;
+          return (
+            <Badge key={s.key} variant="outline" className={cn("gap-1", meta.classes)}>
+              <Icon className="h-3 w-3" />
+              {t(s.label)}: {funnel.statuses[s.key]}
+            </Badge>
+          );
+        })}
+      </div>
+      <p className="mt-3 text-[11px] text-muted-foreground">{t("funnelHelp")}</p>
+      <div className="mt-2 flex flex-col gap-1.5">
+        {funnel.steps.map((step) => {
+          const pct = total > 0 ? Math.round((step.runs / total) * 100) : 0;
+          const known = tNodes.has(`${step.node_type}.label`);
+          return (
+            <div key={step.node_key} className="flex items-center gap-2 text-xs">
+              {step.node_type in NODE_META ? (
+                <NodeIconChip type={step.node_type as NodeType} size={20} iconSize={12} />
+              ) : (
+                <span className="h-5 w-5 shrink-0" />
+              )}
+              <div className="w-40 min-w-0 shrink-0">
+                <div className="truncate text-foreground">
+                  {known ? tNodes(`${step.node_type}.label`) : step.node_type}
+                </div>
+                <code className="block truncate text-[10px] text-muted-foreground">
+                  {step.node_key}
+                </code>
+              </div>
+              <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
+                <div
+                  className="h-full rounded-full bg-primary"
+                  style={{ width: `${Math.round((step.runs / top) * 100)}%` }}
+                />
+              </div>
+              <span className="w-20 shrink-0 text-right tabular-nums text-muted-foreground">
+                {step.runs} · {pct}%
+              </span>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

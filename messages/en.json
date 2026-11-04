@@ -379,6 +379,18 @@
       "hideGroupFailed": "Could not hide the group.",
       "groupLabel": "WhatsApp group",
       "unnamedGroup": "Unnamed group"
+    },
+    "startFlow": {
+      "button": "Start flow",
+      "menuTitle": "Start a flow for this contact",
+      "loading": "Loading…",
+      "noFlows": "No active flows",
+      "loadFailed": "Could not load flows.",
+      "startFailed": "Could not start the flow.",
+      "started": "Flow \"{name}\" started.",
+      "trigger_manual": "Manual",
+      "trigger_keyword": "Keyword",
+      "trigger_first_inbound_message": "First message"
     }
   },
   "Contacts": {
@@ -1250,7 +1262,10 @@
       "statusHandedOff": "Handed off",
       "statusTimedOut": "Timed out",
       "statusPaused": "Paused by agent",
-      "statusFailed": "Failed"
+      "statusFailed": "Failed",
+      "funnelTitle": "Funnel",
+      "funnelTotal": "{count, plural, one {# run} other {# runs}} in total",
+      "funnelHelp": "How many contacts reached each step, out of everyone who entered the flow."
     },
     "builder": {
       "triggerTitle": "Trigger",
@@ -1342,7 +1357,26 @@
         "uploadFailed": "Upload failed.",
         "fileTooLarge": "File is {size} MB — limit is 16 MB.",
         "defaultOptionTitle": "Option",
-        "optionN": "Option {n}"
+        "optionN": "Option {n}",
+        "validationLabel": "Answer format",
+        "validationAny": "Any text",
+        "validationEmail": "Email",
+        "validationPhone": "Phone",
+        "validationRegex": "Custom (regex)",
+        "regexLabel": "Regular expression",
+        "validationHelp": "If the answer is not in this format, the question is sent again.",
+        "saveToLabel": "Save to contact",
+        "saveToNone": "Don't save",
+        "saveToName": "Name",
+        "saveToEmail": "Email",
+        "saveToCompany": "Company",
+        "pipelineLabel": "Pipeline",
+        "pickPipeline": "Pick a pipeline",
+        "stageLabel": "Stage",
+        "pickStage": "Pick a stage",
+        "dealTitleLabel": "Deal title",
+        "dealValueLabel": "Value",
+        "dealHelp": "The title accepts collected answers, such as"
       },
       "categories": {
         "messaging": "Messaging",
@@ -1389,6 +1423,10 @@
         "end": {
           "label": "End",
           "blurb": "Ends the flow"
+        },
+        "create_deal": {
+          "label": "Create deal",
+          "blurb": "Creates a pipeline deal for the contact"
         }
       }
     },
@@ -2551,7 +2589,12 @@
       "setTagNeedsTag": "Set-tag needs a tag to apply.",
       "setTagNeedsNext": "Set-tag must point to a next node.",
       "setTagMissingNext": "Set-tag points to non-existent node \"{key}\".",
-      "unknownNodeType": "Unknown node type \"{type}\"."
+      "unknownNodeType": "Unknown node type \"{type}\".",
+      "collectInvalidRegex": "The custom format (regex) is empty or invalid.",
+      "createDealNeedsStage": "The Create deal node needs a pipeline and a stage.",
+      "createDealNeedsTitle": "The Create deal node needs a title.",
+      "createDealNeedsNext": "The Create deal node must point to a next node.",
+      "createDealMissingNext": "The Create deal node points to a missing node: \"{key}\"."
     },
     "automations": {
       "needsStep": "active automations need at least one step",
@@ -2760,7 +2803,11 @@
       "nameEmpty": "name cannot be empty",
       "unknownTemplate": "Unknown template_slug \"{slug}\"",
       "insertFailed": "flow insert failed",
-      "nameRequired": "name is required"
+      "nameRequired": "name is required",
+      "startGroup": "Flows don't run in groups.",
+      "startInactive": "This flow is not active.",
+      "startAlreadyInFlow": "This contact is already in a flow. Wait for it to end or pause it.",
+      "startFailed": "Could not start the flow."
     },
     "quickReplies": {
       "kindInvalid": "kind must be \"text\" or \"interactive\"",

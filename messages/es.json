@@ -379,6 +379,18 @@
       "hideGroupFailed": "No se pudo ocultar el grupo.",
       "groupLabel": "Grupo de WhatsApp",
       "unnamedGroup": "Grupo sin nombre"
+    },
+    "startFlow": {
+      "button": "Iniciar flujo",
+      "menuTitle": "Iniciar un flujo para este contacto",
+      "loading": "Cargando…",
+      "noFlows": "Ningún flujo activo",
+      "loadFailed": "No se pudieron cargar los flujos.",
+      "startFailed": "No se pudo iniciar el flujo.",
+      "started": "Flujo \"{name}\" iniciado.",
+      "trigger_manual": "Manual",
+      "trigger_keyword": "Palabra clave",
+      "trigger_first_inbound_message": "Primer mensaje"
     }
   },
   "Contacts": {
@@ -1250,7 +1262,10 @@
       "statusHandedOff": "Transferida",
       "statusTimedOut": "Tiempo agotado",
       "statusPaused": "Pausada por el agente",
-      "statusFailed": "Fallida"
+      "statusFailed": "Fallida",
+      "funnelTitle": "Embudo",
+      "funnelTotal": "{count, plural, one {# ejecución} other {# ejecuciones}} en total",
+      "funnelHelp": "Cuántos contactos llegaron a cada paso, respecto a todos los que entraron al flujo."
     },
     "builder": {
       "triggerTitle": "Disparador",
@@ -1342,7 +1357,26 @@
         "uploadFailed": "Error al subir.",
         "fileTooLarge": "El archivo pesa {size} MB; el límite es 16 MB.",
         "defaultOptionTitle": "Opción",
-        "optionN": "Opción {n}"
+        "optionN": "Opción {n}",
+        "validationLabel": "Formato de la respuesta",
+        "validationAny": "Cualquier texto",
+        "validationEmail": "Correo electrónico",
+        "validationPhone": "Teléfono",
+        "validationRegex": "Personalizado (regex)",
+        "regexLabel": "Expresión regular",
+        "validationHelp": "Si la respuesta no tiene este formato, la pregunta se envía de nuevo.",
+        "saveToLabel": "Guardar en el contacto",
+        "saveToNone": "No guardar",
+        "saveToName": "Nombre",
+        "saveToEmail": "Correo electrónico",
+        "saveToCompany": "Empresa",
+        "pipelineLabel": "Embudo",
+        "pickPipeline": "Elige el embudo",
+        "stageLabel": "Etapa",
+        "pickStage": "Elige la etapa",
+        "dealTitleLabel": "Título del negocio",
+        "dealValueLabel": "Valor",
+        "dealHelp": "El título acepta respuestas recogidas, como"
       },
       "categories": {
         "messaging": "Mensajería",
@@ -1389,6 +1423,10 @@
         "end": {
           "label": "Fin",
           "blurb": "Termina el flujo"
+        },
+        "create_deal": {
+          "label": "Crear negocio",
+          "blurb": "Crea un negocio en el embudo para el contacto"
         }
       }
     },
@@ -2551,7 +2589,12 @@
       "setTagNeedsTag": "El nodo Etiquetar contacto necesita una etiqueta para aplicar.",
       "setTagNeedsNext": "El nodo Etiquetar contacto debe apuntar a un nodo siguiente.",
       "setTagMissingNext": "El nodo Etiquetar contacto apunta a un nodo inexistente: \"{key}\".",
-      "unknownNodeType": "Tipo de nodo desconocido: \"{type}\"."
+      "unknownNodeType": "Tipo de nodo desconocido: \"{type}\".",
+      "collectInvalidRegex": "El formato personalizado (regex) está vacío o no es válido.",
+      "createDealNeedsStage": "El nodo Crear negocio necesita un embudo y una etapa.",
+      "createDealNeedsTitle": "El nodo Crear negocio necesita un título.",
+      "createDealNeedsNext": "El nodo Crear negocio debe apuntar a un siguiente nodo.",
+      "createDealMissingNext": "El nodo Crear negocio apunta a un nodo inexistente: \"{key}\"."
     },
     "automations": {
       "needsStep": "las automatizaciones activas necesitan al menos un paso",
@@ -2760,7 +2803,11 @@
       "nameEmpty": "El nombre no puede estar vacío",
       "unknownTemplate": "Plantilla de flujo desconocida \"{slug}\"",
       "insertFailed": "error al crear el flujo",
-      "nameRequired": "El nombre es obligatorio"
+      "nameRequired": "El nombre es obligatorio",
+      "startGroup": "Los flujos no se ejecutan en grupos.",
+      "startInactive": "Este flujo no está activo.",
+      "startAlreadyInFlow": "Este contacto ya está en un flujo. Espera a que termine o páusalo.",
+      "startFailed": "No se pudo iniciar el flujo."
     },
     "quickReplies": {
       "kindInvalid": "El tipo debe ser \"text\" o \"interactive\"",

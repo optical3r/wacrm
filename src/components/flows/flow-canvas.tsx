@@ -700,6 +700,7 @@ const ADD_NODE_TYPES: NodeType[] = [
   'collect_input',
   'condition',
   'set_tag',
+  'create_deal',
   'handoff',
   'end',
 ];

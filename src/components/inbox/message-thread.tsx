@@ -59,6 +59,7 @@ import { buildReplyPreview } from "./reply-quote";
 import { renderTemplateBody } from "@/lib/whatsapp/template-body";
 import { contactHandle } from "@/lib/whatsapp/wa-identity";
 import { STATUS_STYLES } from "./status-chip";
+import { StartFlowButton } from "./start-flow-button";
 import { toast } from "sonner";
 
 interface ReplyDraft {
@@ -1144,6 +1145,10 @@ export function MessageThread({
             >
               <EyeOff className="h-3.5 w-3.5" />
             </button>
+          )}
+
+          {!isGroup && canSendMessages && conversation?.id && (
+            <StartFlowButton conversationId={conversation.id} />
           )}
 
           {/* Status dropdown */}

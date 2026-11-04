@@ -379,6 +379,18 @@
       "hideGroupFailed": "Não foi possível ocultar o grupo.",
       "groupLabel": "Grupo do WhatsApp",
       "unnamedGroup": "Grupo sem nome"
+    },
+    "startFlow": {
+      "button": "Iniciar fluxo",
+      "menuTitle": "Iniciar um fluxo para este contato",
+      "loading": "Carregando…",
+      "noFlows": "Nenhum fluxo ativo",
+      "loadFailed": "Não foi possível carregar os fluxos.",
+      "startFailed": "Não foi possível iniciar o fluxo.",
+      "started": "Fluxo \"{name}\" iniciado.",
+      "trigger_manual": "Manual",
+      "trigger_keyword": "Palavra-chave",
+      "trigger_first_inbound_message": "Primeira mensagem"
     }
   },
   "Contacts": {
@@ -1250,7 +1262,10 @@
       "statusHandedOff": "Transferida",
       "statusTimedOut": "Tempo esgotado",
       "statusPaused": "Pausada pelo agente",
-      "statusFailed": "Falhou"
+      "statusFailed": "Falhou",
+      "funnelTitle": "Funil",
+      "funnelTotal": "{count, plural, one {# execução} other {# execuções}} no total",
+      "funnelHelp": "Quantos contatos chegaram a cada etapa, em relação a todos que entraram no fluxo."
     },
     "builder": {
       "triggerTitle": "Gatilho",
@@ -1342,7 +1357,26 @@
         "uploadFailed": "Falha no upload.",
         "fileTooLarge": "O arquivo tem {size} MB — o limite é 16 MB.",
         "defaultOptionTitle": "Opção",
-        "optionN": "Opção {n}"
+        "optionN": "Opção {n}",
+        "validationLabel": "Formato da resposta",
+        "validationAny": "Qualquer texto",
+        "validationEmail": "E-mail",
+        "validationPhone": "Telefone",
+        "validationRegex": "Personalizado (regex)",
+        "regexLabel": "Expressão regular",
+        "validationHelp": "Se a resposta não estiver nesse formato, a pergunta é enviada de novo.",
+        "saveToLabel": "Salvar no contato",
+        "saveToNone": "Não salvar",
+        "saveToName": "Nome",
+        "saveToEmail": "E-mail",
+        "saveToCompany": "Empresa",
+        "pipelineLabel": "Funil",
+        "pickPipeline": "Escolha o funil",
+        "stageLabel": "Etapa",
+        "pickStage": "Escolha a etapa",
+        "dealTitleLabel": "Título do negócio",
+        "dealValueLabel": "Valor",
+        "dealHelp": "O título aceita respostas coletadas, como"
       },
       "categories": {
         "messaging": "Mensagens",
@@ -1389,6 +1423,10 @@
         "end": {
           "label": "Fim",
           "blurb": "Encerra o fluxo"
+        },
+        "create_deal": {
+          "label": "Criar negócio",
+          "blurb": "Cria um negócio no Pipeline para o contato"
         }
       }
     },
@@ -2551,7 +2589,12 @@
       "setTagNeedsTag": "O nó Marcar contato precisa de uma tag para aplicar.",
       "setTagNeedsNext": "O nó Marcar contato precisa apontar para um próximo nó.",
       "setTagMissingNext": "O nó Marcar contato aponta para um nó inexistente: \"{key}\".",
-      "unknownNodeType": "Tipo de nó desconhecido: \"{type}\"."
+      "unknownNodeType": "Tipo de nó desconhecido: \"{type}\".",
+      "collectInvalidRegex": "O formato personalizado (regex) está vazio ou é inválido.",
+      "createDealNeedsStage": "O nó Criar negócio precisa de um funil e uma etapa.",
+      "createDealNeedsTitle": "O nó Criar negócio precisa de um título.",
+      "createDealNeedsNext": "O nó Criar negócio precisa apontar para um próximo nó.",
+      "createDealMissingNext": "O nó Criar negócio aponta para um nó inexistente: \"{key}\"."
     },
     "automations": {
       "needsStep": "automações ativas precisam de pelo menos uma etapa",
@@ -2760,7 +2803,11 @@
       "nameEmpty": "O nome não pode ficar vazio",
       "unknownTemplate": "Modelo de fluxo desconhecido \"{slug}\"",
       "insertFailed": "falha ao criar o fluxo",
-      "nameRequired": "O nome é obrigatório"
+      "nameRequired": "O nome é obrigatório",
+      "startGroup": "Fluxos não rodam em grupos.",
+      "startInactive": "Esse fluxo não está ativo.",
+      "startAlreadyInFlow": "Esse contato já está em um fluxo. Espere terminar ou pause o fluxo atual.",
+      "startFailed": "Não foi possível iniciar o fluxo."
     },
     "quickReplies": {
       "kindInvalid": "O tipo deve ser \"text\" ou \"interactive\"",
