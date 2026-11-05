@@ -10,11 +10,12 @@ type Action =
   | { action: "unblock" }
   | { action: "set_plan"; plan: "starter" | "pro" }
   | { action: "disconnect_whatsapp" }
-  | { action: "set_max_numbers"; max_numbers: number };
+  | { action: "set_max_numbers"; max_numbers: number }
+  | { action: "set_max_workspaces"; max_workspaces: number };
 
 function parseAction(body: unknown): Action | null {
   if (!body || typeof body !== "object") return null;
-  const b = body as { action?: unknown; plan?: unknown; max_numbers?: unknown };
+  const b = body as { action?: unknown; plan?: unknown; max_numbers?: unknown; max_workspaces?: unknown };
   const plan = b.plan === "starter" || b.plan === "pro" ? b.plan : null;
   switch (b.action) {
     case "approve":
@@ -29,6 +30,10 @@ function parseAction(body: unknown): Action | null {
       const n = Number(b.max_numbers);
       return Number.isInteger(n) && n >= 1 && n <= 50 ? { action: b.action, max_numbers: n } : null;
     }
+    case "set_max_workspaces": {
+      const n = Number(b.max_workspaces);
+      return Number.isInteger(n) && n >= 1 && n <= 50 ? { action: b.action, max_workspaces: n } : null;
+    }
     default:
       return null;
   }
@@ -37,7 +42,8 @@ function parseAction(body: unknown): Action | null {
 /**
  * Platform-owner actions on one organization: approve (with a plan),
  * reject, block, unblock, change plan, disconnect WhatsApp (every
- * number of the account), set the Starter number limit. Each one is
+ * number of the account), set the Starter number limit, set how many
+ * workspaces the client may have. Each one is
  * written to admin_audit_log.
  *
  * A plan change also disconnects the WhatsApp number, since Starter
@@ -58,7 +64,7 @@ export async function PATCH(
 
     const { data: account, error: loadErr } = await admin
       .from("accounts")
-      .select("id, plan, status")
+      .select("id, plan, status, organization_id")
       .eq("id", id)
       .maybeSingle();
     if (loadErr) throw loadErr;
@@ -100,6 +106,19 @@ export async function PATCH(
         // Numbers already connected stay; the limit only blocks new ones.
         update = { max_numbers: action.max_numbers };
         break;
+      case "set_max_workspaces": {
+        // The limit is the client's (every workspace of it); existing
+        // workspaces stay, the limit only blocks new ones.
+        if (!account.organization_id) {
+          return NextResponse.json({ error: "Organização sem cliente vinculado." }, { status: 400 });
+        }
+        const { error } = await admin
+          .from("organizations")
+          .update({ max_workspaces: action.max_workspaces, updated_at: new Date().toISOString() })
+          .eq("id", account.organization_id);
+        if (error) throw error;
+        break;
+      }
     }
 
     if (update) {

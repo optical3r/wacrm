@@ -42,6 +42,7 @@ interface AdminAccount {
   messages_30d: number;
   last_message_at: string | null;
   max_numbers: number;
+  organization: { id: string; name: string; max_workspaces: number; workspaces: number } | null;
   whatsapp: { status: string; connected_at: string | null; connected: number; total: number } | null;
 }
 
@@ -52,7 +53,8 @@ type Action =
   | { action: "unblock" }
   | { action: "set_plan"; plan: Plan }
   | { action: "disconnect_whatsapp" }
-  | { action: "set_max_numbers"; max_numbers: number };
+  | { action: "set_max_numbers"; max_numbers: number }
+  | { action: "set_max_workspaces"; max_workspaces: number };
 
 // Actions that cut access or a connection ask first.
 const CONFIRM: Partial<Record<Action["action"], true>> = {
@@ -156,6 +158,7 @@ export default function AdminPage() {
         (a) =>
           !q ||
           a.name.toLowerCase().includes(q) ||
+          (a.organization?.name ?? "").toLowerCase().includes(q) ||
           (a.owner_email ?? "").toLowerCase().includes(q),
       )
       // Pending first: they are waiting on you.
@@ -267,6 +270,36 @@ export default function AdminPage() {
                       <TableCell>
                         <p className="font-medium text-foreground">{a.name}</p>
                         <p className="text-xs text-muted-foreground">{a.owner_email ?? "—"}</p>
+                        {a.organization && (
+                          <p className="mt-1 text-xs text-muted-foreground">
+                            {t("workspaces.line", {
+                              client: a.organization.name,
+                              count: a.organization.workspaces,
+                              max: a.organization.max_workspaces,
+                            })}{" "}
+                            <button
+                              type="button"
+                              className="text-primary underline-offset-2 hover:underline disabled:opacity-50"
+                              disabled={busy}
+                              onClick={() => {
+                                const org = a.organization!;
+                                const answer = window.prompt(
+                                  t("workspaces.prompt", { client: org.name }),
+                                  String(org.max_workspaces),
+                                );
+                                if (answer === null) return;
+                                const n = Number(answer);
+                                if (!Number.isInteger(n) || n < 1 || n > 50) {
+                                  toast.error(t("limitInvalid"));
+                                  return;
+                                }
+                                if (n !== org.max_workspaces) ask(a, { action: "set_max_workspaces", max_workspaces: n });
+                              }}
+                            >
+                              {t("workspaces.setLimit")}
+                            </button>
+                          </p>
+                        )}
                       </TableCell>
                       <TableCell>
                         <Badge

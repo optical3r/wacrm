@@ -1,10 +1,16 @@
 import { NextResponse } from 'next/server'
+import { listWorkspaceMembers } from '@/lib/auth/workspace-members'
 import { createHash, randomBytes } from 'node:crypto'
 import { createClient as createAdminClient, type SupabaseClient } from '@supabase/supabase-js'
 import QRCode from 'qrcode'
 import { requireRole, toErrorResponse } from '@/lib/auth/account'
 import { hasMinRole } from '@/lib/auth/roles'
-import { markDapiDisconnected, NUMBER_LIMIT_MESSAGE, saveDapiConnection } from '@/lib/whatsapp/dapi-connection'
+import {
+  markDapiDisconnected,
+  NUMBER_IN_OTHER_WORKSPACE_MESSAGE,
+  NUMBER_LIMIT_MESSAGE,
+  saveDapiConnection,
+} from '@/lib/whatsapp/dapi-connection'
 import { channelMembers } from '@/lib/whatsapp/channels'
 import {
   dapiClient,
@@ -260,15 +266,8 @@ async function listNumbers(accountId: string, userId: string, all: boolean) {
 
 /** Members who can be linked to a number: everyone who can send (agent and up). */
 async function linkableMembers(accountId: string) {
-  const { data } = await supabaseAdmin()
-    .from('profiles')
-    .select('user_id, full_name, email, account_role')
-    .eq('account_id', accountId)
-    .in('account_role', ['owner', 'admin', 'agent'])
-    .order('created_at', { ascending: true })
-  return ((data ?? []) as Array<{ user_id: string; full_name: string | null; email: string | null; account_role: string }>).map(
-    (p) => ({ user_id: p.user_id, name: p.full_name || p.email || '', role: p.account_role }),
-  )
+  const { members } = await listWorkspaceMembers(supabaseAdmin(), accountId, ['owner', 'admin', 'agent'])
+  return members.map((p) => ({ user_id: p.user_id, name: p.full_name || p.email || '', role: p.role }))
 }
 
 const NOT_A_MEMBER = 'Escolha atendentes desta conta (dono, admin ou atendente).'
@@ -392,6 +391,8 @@ async function sessionState(request: Request, accountId: string, userId: string,
       sessionId: row.session_id,
       phone,
     })
+    // Refused: the phone is connected in another workspace.
+    if (syncError === NUMBER_IN_OTHER_WORKSPACE_MESSAGE) status = 'disconnected'
   } else if (status === 'disconnected') {
     if (row.status !== 'disconnected') await markDapiDisconnected(supabaseAdmin(), row.session_id)
   } else {

@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { LabCrmMark } from "@/components/brand/labcrm-mark";
+import { WorkspaceSwitcher } from "@/components/workspaces/workspace-switcher";
 import { useAuth } from "@/hooks/use-auth";
 import { useTotalUnread } from "@/hooks/use-total-unread";
 import { useUnreadNotifications } from "@/hooks/use-unread-notifications";
@@ -210,6 +211,8 @@ export function Sidebar({ open = false, onClose }: SidebarProps) {
             <X className="h-5 w-5" />
           </button>
         </div>
+
+        <WorkspaceSwitcher />
 
         {/* Main navigation */}
         <nav className="flex-1 overflow-y-auto px-3 py-4">

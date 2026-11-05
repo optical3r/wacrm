@@ -20,6 +20,27 @@ export function isNumberLimitError(error: { message?: string; hint?: string } | 
   return Boolean(error && (error.hint === 'whatsapp_number_limit' || /number limit reached/.test(error.message ?? '')))
 }
 
+export const NUMBER_IN_OTHER_WORKSPACE_MESSAGE =
+  'Este número já está conectado em outro workspace. Desconecte-o lá antes de conectar aqui.'
+
+/** Whether this phone is connected right now through another workspace. */
+export async function connectedElsewhere(
+  admin: Admin,
+  accountId: string,
+  sessionId: string,
+  phone: string,
+): Promise<boolean> {
+  const { data } = await admin
+    .from('dapi_sessions')
+    .select('session_id')
+    .eq('phone', phone)
+    .eq('status', 'connected')
+    .neq('account_id', accountId)
+    .neq('session_id', sessionId)
+    .limit(1)
+  return ((data ?? []) as unknown[]).length > 0
+}
+
 /**
  * Save a connected session as a number of the account: the number the
  * session was started for, else the number that already had this phone,
@@ -32,6 +53,22 @@ export async function saveDapiConnection(
   const { accountId, sessionId, phone } = args
   const now = new Date().toISOString()
   const phoneNumberId = dapiPhoneNumberId(sessionId)
+
+  // One WhatsApp number lives in one workspace only (migration 061): a
+  // phone already connected in another workspace is refused and this
+  // pairing is logged out.
+  if (phone && (await connectedElsewhere(admin, accountId, sessionId, phone))) {
+    if (hasDapiApiKey()) {
+      await dapiClient()
+        .sessions.delete(sessionId)
+        .catch((err: unknown) => console.warn('[dapi] logout failed:', err instanceof Error ? err.message : err))
+    }
+    await admin
+      .from('dapi_sessions')
+      .update({ status: 'disconnected', phone, updated_at: now })
+      .eq('session_id', sessionId)
+    return NUMBER_IN_OTHER_WORKSPACE_MESSAGE
+  }
 
   await admin
     .from('dapi_sessions')

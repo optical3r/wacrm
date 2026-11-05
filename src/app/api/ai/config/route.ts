@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isWorkspaceMember } from '@/lib/auth/workspace-members'
 import {
   getCurrentAccount,
   requireRole,
@@ -111,13 +112,9 @@ export async function POST(request: Request) {
     const handoffProvided = 'handoff_agent_id' in body
     let handoffAgentId: string | null = null
     if (rawHandoff) {
-      const { data: member } = await supabase
-        .from('profiles')
-        .select('user_id')
-        .eq('account_id', accountId)
-        .eq('user_id', rawHandoff)
-        .maybeSingle()
-      if (!member) return bad(t('ai.handoffNotMember'))
+      if (!(await isWorkspaceMember(supabase, accountId, rawHandoff))) {
+        return bad(t('ai.handoffNotMember'))
+      }
       handoffAgentId = rawHandoff
     }
 

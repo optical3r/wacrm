@@ -15,32 +15,20 @@
 import { NextResponse } from "next/server";
 
 import { getCurrentAccount, toErrorResponse } from "@/lib/auth/account";
-import { canManageMembers, isAccountRole } from "@/lib/auth/roles";
+import { canManageMembers } from "@/lib/auth/roles";
+import { listWorkspaceMembers } from "@/lib/auth/workspace-members";
 import type { AccountMember } from "@/types";
 import { getT } from "@/lib/i18n/translate";
 
 const t = getT("Api");
 
-interface ProfileRow {
-  user_id: string;
-  full_name: string | null;
-  email: string | null;
-  avatar_url: string | null;
-  account_role: string;
-  created_at: string;
-}
-
 export async function GET() {
   try {
     const ctx = await getCurrentAccount();
 
-    // RLS on profiles allows reading any row whose account matches
-    // the caller's, so this query is naturally account-scoped.
-    const { data, error } = await ctx.supabase
-      .from("profiles")
-      .select("user_id, full_name, email, avatar_url, account_role, created_at")
-      .eq("account_id", ctx.accountId)
-      .order("created_at", { ascending: true });
+    // Memberships, not profiles.account_id: a teammate who has another
+    // workspace open is still a member of this one (migration 061).
+    const { members: rows, error } = await listWorkspaceMembers(ctx.supabase, ctx.accountId);
 
     if (error) {
       console.error("[GET /api/account/members] fetch error:", error);
@@ -52,22 +40,14 @@ export async function GET() {
 
     const canSeeEmails = canManageMembers(ctx.role);
 
-    const members: AccountMember[] = (data as ProfileRow[]).flatMap((row) => {
-      // Defensive: the DB enum should never let an unknown role
-      // through, but if a migration ever broadens the enum without
-      // updating TS, skip the row rather than crash the page.
-      if (!isAccountRole(row.account_role)) return [];
-      return [
-        {
-          user_id: row.user_id,
-          full_name: row.full_name ?? "",
-          email: canSeeEmails ? row.email : null,
-          avatar_url: row.avatar_url,
-          role: row.account_role,
-          joined_at: row.created_at,
-        },
-      ];
-    });
+    const members: AccountMember[] = rows.map((row) => ({
+      user_id: row.user_id,
+      full_name: row.full_name,
+      email: canSeeEmails ? row.email : null,
+      avatar_url: row.avatar_url,
+      role: row.role,
+      joined_at: row.joined_at,
+    }));
 
     return NextResponse.json({ members });
   } catch (err) {

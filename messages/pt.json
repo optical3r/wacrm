@@ -1700,7 +1700,7 @@
       "networkError": "Não foi possível conectar ao servidor",
       "memberAlt": "Membro",
       "removeDialogTitle": "Remover membro",
-      "removeDialogDesc": "Remover <bold>{name}</bold> da conta? A pessoa será desconectada desta conta e receberá uma nova conta pessoal no próximo login. O login dela não é excluído.",
+      "removeDialogDesc": "Remover <bold>{name}</bold> deste workspace? A pessoa perde o acesso a este workspace, mas continua nos outros workspaces de que participa. O login dela não é excluído.",
       "cancel": "Cancelar",
       "removing": "Removendo...",
       "removeBtn": "Remover membro"
@@ -2434,7 +2434,7 @@
       "serverErrorTitle": "Algo deu errado",
       "serverErrorBody": "Não conseguimos verificar este convite agora. Tente recarregar a página em instantes."
     },
-    "conflictDefault": "Você já está em outra conta. Entre com um e-mail diferente para ingressar nesta.",
+    "conflictDefault": "Você já participa deste workspace.",
     "acceptFailed": "Falha ao aceitar o convite",
     "welcome": "Bem-vindo à equipe",
     "serverUnreachable": "Não foi possível conectar ao servidor",
@@ -2447,9 +2447,9 @@
     "joinAs": "Você entrará como <badge>{role}</badge>. Link válido até {date}.",
     "accepting": "Aceitando…",
     "acceptInvitation": "Aceitar convite",
-    "acceptNote": "Ao aceitar, seu login passa para {name}. Sua conta pessoal vazia criada no cadastro será removida.",
-    "conflictTitle": "Não é possível entrar em {name} com esta conta",
-    "conflictBody": "Para entrar em <account>{name}</account>, saia e cadastre-se novamente com um endereço de e-mail diferente. O link do convite continua válido enquanto não expirar.",
+    "acceptNote": "Ao aceitar, {name} passa a aparecer na sua lista de workspaces e já abre em seguida. Os workspaces de que você já participa continuam com você.",
+    "conflictTitle": "Você já está em {name}",
+    "conflictBody": "<account>{name}</account> já aparece no seletor de workspaces no topo do menu. O link do convite continua válido para outra pessoa enquanto não expirar.",
     "staySignedIn": "Continuar conectado",
     "signingOut": "Saindo…",
     "signOutSwitch": "Sair e usar outro e-mail",
@@ -3038,7 +3038,7 @@
       "wabaIdDigits": "O WhatsApp Business Account ID deve conter apenas dígitos — copie-o de Meta → WhatsApp → API Setup.",
       "pinDigits": "O PIN deve ter exatamente 6 dígitos.",
       "validateFailed": "Falha ao validar a configuração",
-      "numberLinkedElsewhere": "Este número do WhatsApp já está vinculado a outra conta nesta instância. Cada número de telefone só pode ser conectado a um usuário do LabCRM.",
+      "numberLinkedElsewhere": "Este número do WhatsApp já está conectado em outro workspace. Cada número só pode ficar em um workspace por vez.",
       "encryptFailed": "Falha ao criptografar o token. Verifique se a ENCRYPTION_KEY é uma string hexadecimal válida de 64 caracteres nas suas variáveis de ambiente.",
       "updateFailed": "Falha ao atualizar a configuração",
       "saveFailed": "Falha ao salvar a configuração",
@@ -3166,7 +3166,8 @@
       "unblock": "{name} desbloqueada.",
       "set_plan": "Plano de {name} alterado.",
       "disconnect_whatsapp": "WhatsApp de {name} desconectado.",
-      "set_max_numbers": "Limite de números de {name} alterado."
+      "set_max_numbers": "Limite de números de {name} alterado.",
+      "set_max_workspaces": "Limite de workspaces do cliente de {name} alterado."
     },
     "confirm": {
       "reject": {
@@ -3187,7 +3188,12 @@
       }
     },
     "limitPrompt": "Limite de números de {name} (1 a 50):",
-    "limitInvalid": "Informe um número inteiro de 1 a 50."
+    "limitInvalid": "Informe um número inteiro de 1 a 50.",
+    "workspaces": {
+      "line": "Cliente {client} · {count} de {max} workspaces",
+      "prompt": "Quantos workspaces o cliente {client} pode ter?",
+      "setLimit": "Alterar"
+    }
   },
   "AccountStatusGate": {
     "pendingTitle": "Cadastro em análise",
@@ -3196,5 +3202,25 @@
     "blockedDesc": "O acesso desta organização ao LabCRM está suspenso. Fale com a Cerqueira Labs para mais informações.",
     "signedInAs": "Conectado como {email}",
     "signOut": "Sair"
+  },
+  "Workspaces": {
+    "open": "Trocar de workspace",
+    "workspace": "Workspace",
+    "switchError": "Não foi possível trocar de workspace.",
+    "createError": "Não foi possível criar o workspace.",
+    "created": "Workspace {name} criado. Conecte os números e convide a equipe.",
+    "limitReached": "Este cliente já tem o máximo de {max} workspace(s). Fale com o suporte para aumentar.",
+    "new": "Novo workspace",
+    "count": "{count}/{max}",
+    "newTitle": "Novo workspace",
+    "newDescription": "Um workspace novo de {client}, vazio, com números, conversas, contatos e equipe próprios. Ele usa o mesmo plano do workspace atual.",
+    "namePlaceholder": "Ex.: Vendas",
+    "cancel": "Cancelar",
+    "create": "Criar workspace",
+    "status": {
+      "pending": "pendente",
+      "blocked": "bloqueado",
+      "active": "ativo"
+    }
   }
 }
