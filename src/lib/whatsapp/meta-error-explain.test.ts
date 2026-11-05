@@ -24,7 +24,7 @@ describe("explainMetaError — access token", () => {
     expect(x.field).toBe("access_token");
     expect(x.side).toBe("user");
     expect(x.httpStatus).toBe(400);
-    expect(x.summary).toMatch(/System Users/);
+    expect(x.summary).toMatch(/Usuários do sistema/);
     expect(x.summary).toMatch(/whatsapp_business_management/);
     expect(x.code).toBe(190);
     expect(x.fbtraceId).toBe("AbCdEf123");
@@ -32,7 +32,7 @@ describe("explainMetaError — access token", () => {
 
   it("names expiry for 190/463", () => {
     const x = explainMetaError(metaErr({ code: 190, subcode: 463 }), "verify_number");
-    expect(x.summary).toMatch(/expired/i);
+    expect(x.summary).toMatch(/expirou/i);
     expect(x.subcode).toBe(463);
   });
 
@@ -47,8 +47,8 @@ describe("explainMetaError — permissions", () => {
     const x = explainMetaError(metaErr({ code }), "subscribe_waba");
     expect(x.field).toBe("access_token");
     expect(x.side).toBe("user");
-    expect(x.summary).toMatch(/whatsapp_business_management and whatsapp_business_messaging/);
-    expect(x.summary).toMatch(/subscribing the WhatsApp Business Account/);
+    expect(x.summary).toMatch(/whatsapp_business_management e whatsapp_business_messaging/);
+    expect(x.summary).toMatch(/inscrever a conta do WhatsApp Business/);
   });
 
   it("maps 131005 (access denied) to a System-User-assignment hint naming the id", () => {
@@ -56,8 +56,8 @@ describe("explainMetaError — permissions", () => {
       phoneNumberId: "123456789",
     });
     expect(x.field).toBe("access_token");
-    expect(x.summary).toMatch(/Phone Number ID 123456789/);
-    expect(x.summary).toMatch(/Assign the System User/);
+    expect(x.summary).toMatch(/ID do número de telefone 123456789/);
+    expect(x.summary).toMatch(/Atribua o usuário do sistema/);
   });
 });
 
@@ -73,8 +73,8 @@ describe("explainMetaError — wrong object ids", () => {
     );
     expect(x.field).toBe("phone_number_id");
     expect(x.side).toBe("user");
-    expect(x.summary).toMatch(/cannot find Phone Number ID 123/);
-    expect(x.summary).toMatch(/does not own it/);
+    expect(x.summary).toMatch(/não encontrou ID do número de telefone 123/);
+    expect(x.summary).toMatch(/não é dono dele/);
   });
 
   it("blames the WABA ID when the WABA-scoped steps hit the same error", () => {
@@ -83,7 +83,7 @@ describe("explainMetaError — wrong object ids", () => {
         wabaId: "9876",
       });
       expect(x.field).toBe("waba_id");
-      expect(x.summary).toMatch(/WhatsApp Business Account ID 9876/);
+      expect(x.summary).toMatch(/ID da conta do WhatsApp Business 9876/);
     }
   });
 
@@ -93,7 +93,7 @@ describe("explainMetaError — wrong object ids", () => {
       "subscribe_waba",
     );
     expect(x.field).toBe("waba_id");
-    expect(x.summary).toMatch(/cannot find the WhatsApp Business Account ID/);
+    expect(x.summary).toMatch(/não encontrou o ID da conta do WhatsApp Business/);
   });
 
   it("maps a bare code 33 the same way", () => {
@@ -108,7 +108,7 @@ describe("explainMetaError — wrong object ids", () => {
     );
     expect(x.field).toBe("phone_number_id");
     expect(x.summary).toMatch(/\(#100\) Invalid parameter/);
-    expect(x.summary).toMatch(/digits only/);
+    expect(x.summary).toMatch(/só dígitos/);
   });
 
   it("points a 100 PIN param error at the PIN field during register", () => {
@@ -132,7 +132,7 @@ describe("explainMetaError — registration and PIN", () => {
     const x = explainMetaError(metaErr({ code }), "register");
     expect(x.field).toBe("pin");
     expect(x.side).toBe("user");
-    expect(x.summary).toMatch(/PIN is wrong/);
+    expect(x.summary).toMatch(/PIN da verificação em duas etapas está errado/);
   });
 
   it("133008 → too many PIN guesses is a wait, not a form fix", () => {
@@ -148,20 +148,20 @@ describe("explainMetaError — account state and throttling", () => {
     const x = explainMetaError(metaErr({ code: 131031 }), "verify_number");
     expect(x.field).toBe("meta_account");
     expect(x.side).toBe("meta");
-    expect(x.summary).toMatch(/restricted or locked/);
+    expect(x.summary).toMatch(/restringiu ou bloqueou/);
   });
 
   it.each([4, 80007, 130429])("%i → rate limit, retry later", (code) => {
     const x = explainMetaError(metaErr({ code }), "verify_number");
     expect(x.field).toBeNull();
     expect(x.side).toBe("meta");
-    expect(x.summary).toMatch(/rate-limiting/);
+    expect(x.summary).toMatch(/limitando as chamadas/);
   });
 
   it("131000 → temporary Meta-side failure with the code named", () => {
     const x = explainMetaError(metaErr({ code: 131000 }), "subscribe_waba");
     expect(x.side).toBe("meta");
-    expect(x.summary).toMatch(/code 131000/);
+    expect(x.summary).toMatch(/código 131000/);
   });
 });
 
@@ -179,8 +179,8 @@ describe("explainMetaError — fallbacks", () => {
     );
     expect(x.side).toBe("meta");
     expect(x.httpStatus).toBe(502);
-    expect(x.summary).toMatch(/registering the phone number/);
-    expect(x.summary).toMatch(/code 999999\/7/);
+    expect(x.summary).toMatch(/registrar o número de telefone/);
+    expect(x.summary).toMatch(/código 999999\/7/);
     expect(x.summary).toMatch(/Something odd \(more detail\)/);
     expect(x.summary).toMatch(/Trace id TRACE1/);
     expect(x.metaMessage).toBe("Something odd (more detail)");
@@ -191,7 +191,7 @@ describe("explainMetaError — fallbacks", () => {
     expect(x.side).toBe("meta");
     expect(x.code).toBeNull();
     expect(x.fbtraceId).toBeNull();
-    expect(x.summary).toMatch(/Could not reach the Meta Graph API/);
+    expect(x.summary).toMatch(/Não foi possível acessar a API da Meta/);
     expect(x.summary).toMatch(/fetch failed/);
   });
 

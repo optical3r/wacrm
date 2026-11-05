@@ -43,6 +43,7 @@ import {
 import { useTranslations } from 'next-intl';
 import { contactHandle } from '@/lib/whatsapp/wa-identity';
 import { parseInternationalPhone } from '@/lib/whatsapp/phone-utils';
+import { useDateLocale } from "@/hooks/use-date-locale";
 
 interface ContactDetailViewProps {
   open: boolean;
@@ -58,6 +59,7 @@ export function ContactDetailView({
   onUpdated,
 }: ContactDetailViewProps) {
   const t = useTranslations('Contacts.detailView');
+  const { intlLocale } = useDateLocale();
   const supabase = createClient();
   const { accountId, defaultCurrency } = useAuth();
 
@@ -639,7 +641,7 @@ export function ContactDetailView({
                           </button>
                         </div>
                         <p className="text-xs text-muted-foreground mt-1.5">
-                          {new Date(note.created_at).toLocaleDateString('en-US', {
+                          {new Date(note.created_at).toLocaleDateString(intlLocale, {
                             month: 'short',
                             day: 'numeric',
                             year: 'numeric',

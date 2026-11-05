@@ -113,12 +113,12 @@ export function validateInteractivePayload(
   payload: unknown,
 ): InteractiveValidation {
   if (!payload || typeof payload !== 'object') {
-    return fail('Interactive message payload is required.')
+    return fail('Informe o conteúdo da mensagem interativa.')
   }
   const p = payload as Partial<InteractiveMessagePayload>
 
   if (typeof p.body !== 'string' || p.body.trim() === '') {
-    return fail('Interactive message body text is required.')
+    return fail('Informe o texto da mensagem interativa.')
   }
   if (p.body.length > INTERACTIVE_LIMITS.bodyMaxLength) {
     return fail(
@@ -131,7 +131,7 @@ export function validateInteractivePayload(
   if (p.kind === 'buttons') {
     const buttons = (p as InteractiveButtonsPayload).buttons
     if (!Array.isArray(buttons) || buttons.length < 1) {
-      return fail('Add at least one reply button.')
+      return fail('Adicione pelo menos um botão de resposta.')
     }
     if (buttons.length > INTERACTIVE_LIMITS.maxButtons) {
       return fail(
@@ -141,14 +141,14 @@ export function validateInteractivePayload(
     const seen = new Set<string>()
     for (const b of buttons) {
       if (!b || typeof b.id !== 'string' || b.id.trim() === '') {
-        return fail('Every button needs an id.')
+        return fail('Todo botão precisa de um id.')
       }
       if (seen.has(b.id)) {
-        return fail(`Duplicate button id "${b.id}".`)
+        return fail(`Id de botão repetido: "${b.id}".`)
       }
       seen.add(b.id)
       if (typeof b.title !== 'string' || b.title.trim() === '') {
-        return fail('Every button needs a label.')
+        return fail('Todo botão precisa de um texto.')
       }
       if (b.title.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
         return fail(
@@ -165,7 +165,7 @@ export function validateInteractivePayload(
       typeof list.button_label !== 'string' ||
       list.button_label.trim() === ''
     ) {
-      return fail('The list needs a button label.')
+      return fail('A lista precisa do texto do botão.')
     }
     if (list.button_label.length > INTERACTIVE_LIMITS.buttonTitleMaxLength) {
       return fail(
@@ -173,7 +173,7 @@ export function validateInteractivePayload(
       )
     }
     if (!Array.isArray(list.sections) || list.sections.length < 1) {
-      return fail('Add at least one list section.')
+      return fail('Adicione pelo menos uma seção à lista.')
     }
     if (list.sections.length > INTERACTIVE_LIMITS.maxListSections) {
       return fail(
@@ -184,19 +184,19 @@ export function validateInteractivePayload(
     let total = 0
     for (const section of list.sections) {
       if (!section || !Array.isArray(section.rows)) {
-        return fail('Every list section needs rows.')
+        return fail('Toda seção da lista precisa de opções.')
       }
       for (const row of section.rows) {
         total++
         if (!row || typeof row.id !== 'string' || row.id.trim() === '') {
-          return fail('Every list row needs an id.')
+          return fail('Toda opção da lista precisa de um id.')
         }
         if (seen.has(row.id)) {
-          return fail(`Duplicate list row id "${row.id}".`)
+          return fail(`Id de opção repetido: "${row.id}".`)
         }
         seen.add(row.id)
         if (typeof row.title !== 'string' || row.title.trim() === '') {
-          return fail('Every list row needs a title.')
+          return fail('Toda opção da lista precisa de um título.')
         }
         if (row.title.length > INTERACTIVE_LIMITS.listRowTitleMaxLength) {
           return fail(
@@ -214,7 +214,7 @@ export function validateInteractivePayload(
         }
       }
     }
-    if (total < 1) return fail('Add at least one list row.')
+    if (total < 1) return fail('Adicione pelo menos uma opção à lista.')
     if (total > INTERACTIVE_LIMITS.maxListRowsTotal) {
       return fail(
         `A list allows at most ${INTERACTIVE_LIMITS.maxListRowsTotal} rows in total.`,
@@ -223,7 +223,7 @@ export function validateInteractivePayload(
     return ok()
   }
 
-  return fail('Interactive message must be reply buttons or a list.')
+  return fail('A mensagem interativa deve ter botões de resposta ou uma lista.')
 }
 
 /**

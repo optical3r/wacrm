@@ -77,7 +77,7 @@ describe('validateInteractivePayload — buttons', () => {
         { id: 'dup', title: 'B' },
       ],
     })
-    expect(res).toEqual({ ok: false, error: 'Duplicate button id "dup".' })
+    expect(res).toEqual({ ok: false, error: 'Id de botão repetido: "dup".' })
   })
 
   it('rejects empty button id / title', () => {

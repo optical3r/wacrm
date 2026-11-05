@@ -84,7 +84,7 @@ describe('sendMessageToConversation — param validation (pre-DB)', () => {
         contentText: 'a'.repeat(1025),
       },
       400,
-      /1024-character limit/
+      /limite de 1024 caracteres/
     );
   });
 
@@ -93,7 +93,7 @@ describe('sendMessageToConversation — param validation (pre-DB)', () => {
     await expectSendError(
       { ...base, messageType: 'interactive' },
       400,
-      /payload is required/
+      /conteúdo da mensagem interativa/
     );
     // Too many buttons.
     await expectSendError(
@@ -433,7 +433,7 @@ describe('sendMessageToConversation — BSUID recipients (#519)', () => {
         'acct-1',
         { conversationId: 'cv-1', messageType: 'text', contentText: 'hi' }
       )
-    ).rejects.toThrow(/no phone number or WhatsApp user ID/);
+    ).rejects.toThrow(/não tem telefone nem ID de usuário do WhatsApp/);
   });
 
   it('ignores a wa_user_id that is not BSUID-shaped', async () => {
@@ -448,6 +448,6 @@ describe('sendMessageToConversation — BSUID recipients (#519)', () => {
         'acct-1',
         { conversationId: 'cv-1', messageType: 'text', contentText: 'hi' }
       )
-    ).rejects.toThrow(/no phone number or WhatsApp user ID/);
+    ).rejects.toThrow(/não tem telefone nem ID de usuário do WhatsApp/);
   });
 });

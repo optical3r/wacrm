@@ -26,6 +26,7 @@ import {
 import { useMediaBlobUrl } from "@/hooks/use-media-blob-url";
 import { downloadMediaMessage } from "@/lib/media/download";
 import { galleryIndexOf, type MediaGalleryItem } from "@/lib/media/gallery";
+import { useDateLocale } from "@/hooks/use-date-locale";
 
 /**
  * Full-size viewer for the images and videos in the open conversation
@@ -59,6 +60,7 @@ export function MediaLightbox({
   contactLabel,
 }: MediaLightboxProps) {
   const t = useTranslations("Inbox.mediaViewer");
+  const { dateLocale } = useDateLocale();
 
   const index = galleryIndexOf(items, activeId);
   const item = index >= 0 ? items[index] : null;
@@ -116,7 +118,7 @@ export function MediaLightbox({
   if (!item) return null;
 
   const authorLabel = item.fromCustomer ? contactLabel : t("you");
-  const timestamp = format(new Date(item.createdAt), "MMM d, yyyy HH:mm");
+  const timestamp = format(new Date(item.createdAt), "PP HH:mm", { locale: dateLocale });
 
   return (
     <Dialog

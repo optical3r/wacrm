@@ -190,7 +190,7 @@ export function validateSendMessageParams(params: {
   ) {
     throw new SendMessageError(
       'bad_request',
-      'Caption exceeds the 1024-character limit',
+      'A legenda passa do limite de 1024 caracteres',
       400
     );
   }
@@ -246,7 +246,7 @@ export async function sendMessageToConversation(
     .single();
 
   if (convError || !conversation) {
-    throw new SendMessageError('not_found', 'Conversation not found', 404);
+    throw new SendMessageError('not_found', 'Conversa não encontrada', 404);
   }
 
   const contact = conversation.contact;
@@ -262,8 +262,8 @@ export async function sendMessageToConversation(
     throw new SendMessageError(
       'bad_request',
       contact?.phone
-        ? 'Invalid phone number format'
-        : 'Contact has no phone number or WhatsApp user ID',
+        ? 'Formato de telefone inválido'
+        : 'O contato não tem telefone nem ID de usuário do WhatsApp',
       400
     );
   }
@@ -372,7 +372,7 @@ export async function sendMessageToConversation(
     if (resolved.malformed) {
       throw new SendMessageError(
         'template_malformed',
-        'Template row is malformed locally — run "Sync from Meta" in Settings to repair it.',
+        'O template está corrompido no LabCRM. Use "Sincronizar com a Meta" em Configurações para corrigir.',
         500
       );
     }
@@ -480,7 +480,7 @@ export async function sendMessageToConversation(
     const message =
       err instanceof Error ? err.message : 'Unknown Meta API error';
     console.error('[send-message] Meta send failed for all variants:', message);
-    throw new SendMessageError('meta_error', `Meta API error: ${message}`, 502);
+    throw new SendMessageError('meta_error', `Erro da API da Meta: ${message}`, 502);
   }
 
   if (hasValidPhone && workingPhone !== sanitizedPhone) {
@@ -538,7 +538,7 @@ export async function sendMessageToConversation(
     console.error('[send-message] error inserting sent message:', msgError);
     throw new SendMessageError(
       'db_error',
-      `Message sent to Meta but failed to save to DB: ${msgError.message}`,
+      `A mensagem foi enviada, mas não foi salva no LabCRM: ${msgError.message}`,
       500
     );
   }
