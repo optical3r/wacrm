@@ -265,6 +265,9 @@ export function MessageThread({
   const channelNameById = useMemo(() => new Map(channels.map((c) => [c.id, c])), [channels]);
   const { getPresence, getRow, now } = usePresence();
   const [loading, setLoading] = useState(false);
+  // The chat whose messages finished loading — until then an empty list
+  // means "not fetched yet", not "no messages".
+  const [loadedConvId, setLoadedConvId] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -327,7 +330,14 @@ export function MessageThread({
 
   // 24-hour session timer
   const sessionInfo = useMemo(() => {
-    if (noServiceWindow || !messages.length) return { expired: false, remaining: "" };
+    if (noServiceWindow) return { expired: false, remaining: "" };
+    // A chat with no messages yet (opened by typing a number) has no
+    // 24h window on Pro: the first message can only be a template.
+    if (!messages.length) {
+      return loading || loadedConvId !== conversation?.id
+        ? { expired: false, remaining: "" }
+        : { expired: true, remaining: tTimer("noCustomerMessages") };
+    }
 
     // Find last customer message
     const lastCustomerMsg = [...messages]
@@ -350,7 +360,7 @@ export function MessageThread({
         : tTimer("xmRemaining", { minutes: Math.floor(hoursLeft * 60) });
 
     return { expired, remaining };
-  }, [messages, tTimer, noServiceWindow]);
+  }, [messages, tTimer, noServiceWindow, loading, loadedConvId, conversation?.id]);
 
   // Store latest callback in a ref so fetchMessages doesn't need to
   // depend on `onMessagesLoaded` — otherwise parent re-renders cause
@@ -407,7 +417,10 @@ export function MessageThread({
         onMessagesLoadedRef.current(data ?? []);
       }
 
-      if (!cancelled) setLoading(false);
+      if (!cancelled) {
+        setLoading(false);
+        setLoadedConvId(conversationId);
+      }
     })();
 
     return () => {
@@ -1399,7 +1412,7 @@ export function MessageThread({
           <div className="flex flex-col items-center justify-center py-12">
             <p className="text-sm text-muted-foreground">{t("noMessagesYet")}</p>
             <p className="text-xs text-muted-foreground">
-              {t("sendTemplateHint")}
+              {noServiceWindow ? t("writeFirstMessageHint") : t("sendTemplateHint")}
             </p>
           </div>
         ) : (

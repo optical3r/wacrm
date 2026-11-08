@@ -491,6 +491,48 @@ function InboxPageInner() {
     [activeConversation?.id, router]
   );
 
+  // "Conversar com <número>" / "Nova conversa": the server finds or
+  // creates the contact + chat, then we open it like a click would.
+  const handleStartConversation = useCallback(
+    async (phone: string, name?: string): Promise<boolean> => {
+      try {
+        const res = await fetch("/api/conversations/start", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ phone, name }),
+        });
+        const json = (await res.json().catch(() => ({}))) as {
+          conversation_id?: string;
+          error?: string;
+        };
+        if (!res.ok || !json.conversation_id) {
+          toast.error(json.error || t("startFailed"));
+          return false;
+        }
+        const supabase = createClient();
+        const { data } = await supabase
+          .from("conversations")
+          .select(CONVERSATION_SELECT)
+          .eq("id", json.conversation_id)
+          .maybeSingle();
+        if (!data) {
+          toast.error(t("startFailed"));
+          return false;
+        }
+        const conv = normalizeConversation(data);
+        setConversations((prev) =>
+          prev.some((c) => c.id === conv.id) ? prev : [conv, ...prev],
+        );
+        handleSelectConversation(conv);
+        return true;
+      } catch {
+        toast.error(t("startFailed"));
+        return false;
+      }
+    },
+    [handleSelectConversation, t],
+  );
+
   // Mobile "back" — deselect the conversation so the list pane comes
   // back. Also clears the ?c= param so a refresh lands on the list
   // instead of re-opening the thread the user just backed out of.
@@ -586,6 +628,7 @@ function InboxPageInner() {
             conversations={conversations}
             onConversationsLoaded={handleConversationsLoaded}
             resyncToken={resyncToken}
+            onStartConversation={handleStartConversation}
           />
         </div>
 

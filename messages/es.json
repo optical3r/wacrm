@@ -159,7 +159,8 @@
   },
   "Inbox": {
     "page": {
-      "whatsappNotConnected": "WhatsApp® no está conectado. Ve a Configuración para conectar tu cuenta."
+      "whatsappNotConnected": "WhatsApp® no está conectado. Ve a Configuración para conectar tu cuenta.",
+      "startFailed": "No se pudo abrir la conversación"
     },
     "conversationList": {
       "searchPlaceholder": "Buscar conversaciones...",
@@ -182,7 +183,19 @@
       "tabChats": "Conversaciones",
       "tabGroups": "Grupos",
       "unnamedGroup": "Grupo sin nombre",
-      "noGroups": "Aún no hay grupos. Activa \"Leer grupos\" en el número en Configuración > WhatsApp."
+      "noGroups": "Aún no hay grupos. Activa \"Leer grupos\" en el número en Configuración > WhatsApp.",
+      "searchOrNumberPlaceholder": "Buscar o escribir un número...",
+      "newConversation": "Nueva conversación",
+      "chatWith": "Chatear con {phone}",
+      "chatWithHintStarter": "Abrir el chat y escribir",
+      "chatWithHintPro": "Abrir el chat (el primer mensaje es una plantilla)",
+      "newConversationDescStarter": "Escribe el número de WhatsApp. El nombre es opcional y guarda el contacto.",
+      "newConversationDescPro": "Escribe el número de WhatsApp. El nombre es opcional y guarda el contacto. En Pro el primer mensaje debe ser una plantilla aprobada.",
+      "newPhonePlaceholder": "Número, ej.: +34 612 345 678",
+      "newPhoneInvalid": "Número inválido. Usa + y el código de país.",
+      "newNamePlaceholder": "Nombre del contacto (opcional)",
+      "cancel": "Cancelar",
+      "openConversation": "Abrir conversación"
     },
     "messageThread": {
       "backToConversations": "Volver a las conversaciones",
@@ -225,7 +238,8 @@
       "ownersLocked": "Este lead ya tiene dueño. Solo el propietario o un administrador cambia los dueños.",
       "ownersLockedShort": "Solo el admin cambia los dueños",
       "coverLead": "Asumir junto con los dueños",
-      "coverLeadAway": "Dueños ausentes: asumir la conversación"
+      "coverLeadAway": "Dueños ausentes: asumir la conversación",
+      "writeFirstMessageHint": "Escribe el primer mensaje para iniciar la conversación"
     },
     "sessionTimer": {
       "expired": "Expirada",
@@ -3092,6 +3106,12 @@
       "submitFailed": "Error al enviar la plantilla.",
       "metaApiStatus": "Error de la API de Meta: {status}",
       "syncFailed": "Error al sincronizar las plantillas"
+    },
+    "startConversation": {
+      "badPhone": "Número inválido. Usa + y el código de país.",
+      "noNumber": "Conecta un número de WhatsApp antes de iniciar conversaciones.",
+      "otherAgent": "Este contacto ya está hablando con otro agente. Pide a un administrador que te incluya.",
+      "failed": "No se pudo abrir la conversación"
     }
   },
   "Admin": {

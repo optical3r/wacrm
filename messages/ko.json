@@ -159,7 +159,8 @@
   },
   "Inbox": {
     "page": {
-      "whatsappNotConnected": "WhatsApp®이 연결되어 있지 않습니다. 설정으로 이동해 계정을 연결하세요."
+      "whatsappNotConnected": "WhatsApp®이 연결되어 있지 않습니다. 설정으로 이동해 계정을 연결하세요.",
+      "startFailed": "대화를 열 수 없습니다"
     },
     "conversationList": {
       "searchPlaceholder": "대화 검색...",
@@ -182,7 +183,19 @@
       "tabChats": "대화",
       "tabGroups": "그룹",
       "unnamedGroup": "이름 없는 그룹",
-      "noGroups": "아직 그룹이 없습니다. 설정 > WhatsApp에서 번호의 \"그룹 읽기\"를 켜세요."
+      "noGroups": "아직 그룹이 없습니다. 설정 > WhatsApp에서 번호의 \"그룹 읽기\"를 켜세요.",
+      "searchOrNumberPlaceholder": "검색 또는 번호 입력...",
+      "newConversation": "새 대화",
+      "chatWith": "{phone}와(과) 대화",
+      "chatWithHintStarter": "대화를 열고 작성",
+      "chatWithHintPro": "대화 열기 (첫 메시지는 템플릿)",
+      "newConversationDescStarter": "WhatsApp 번호를 입력하세요. 이름은 선택 사항이며 연락처로 저장됩니다.",
+      "newConversationDescPro": "WhatsApp 번호를 입력하세요. 이름은 선택 사항이며 연락처로 저장됩니다. Pro에서는 첫 메시지가 승인된 템플릿이어야 합니다.",
+      "newPhonePlaceholder": "번호, 예: +82 10 1234 5678",
+      "newPhoneInvalid": "잘못된 번호입니다. +와 국가 코드를 사용하세요.",
+      "newNamePlaceholder": "연락처 이름 (선택)",
+      "cancel": "취소",
+      "openConversation": "대화 열기"
     },
     "messageThread": {
       "backToConversations": "대화 목록으로 돌아가기",
@@ -225,7 +238,8 @@
       "ownersLocked": "이미 담당자가 있는 리드입니다. 담당자는 소유자 또는 관리자만 변경할 수 있습니다.",
       "ownersLockedShort": "관리자만 담당자 변경 가능",
       "coverLead": "담당자와 함께 맡기",
-      "coverLeadAway": "담당자 부재: 대화 맡기"
+      "coverLeadAway": "담당자 부재: 대화 맡기",
+      "writeFirstMessageHint": "첫 메시지를 작성해 대화를 시작하세요"
     },
     "sessionTimer": {
       "expired": "만료됨",
@@ -3092,6 +3106,12 @@
       "submitFailed": "템플릿을 제출하지 못했습니다.",
       "metaApiStatus": "Meta API 오류: {status}",
       "syncFailed": "템플릿을 동기화하지 못했습니다"
+    },
+    "startConversation": {
+      "badPhone": "잘못된 번호입니다. +와 국가 코드를 사용하세요.",
+      "noNumber": "대화를 시작하기 전에 WhatsApp 번호를 연결하세요.",
+      "otherAgent": "이 연락처는 이미 다른 상담원과 대화 중입니다. 관리자에게 추가를 요청하세요.",
+      "failed": "대화를 열 수 없습니다"
     }
   },
   "Admin": {

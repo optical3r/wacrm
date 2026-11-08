@@ -159,7 +159,8 @@
   },
   "Inbox": {
     "page": {
-      "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account."
+      "whatsappNotConnected": "WhatsApp® is not connected. Go to Settings to connect your account.",
+      "startFailed": "Couldn't open the conversation"
     },
     "conversationList": {
       "searchPlaceholder": "Search conversations...",
@@ -182,7 +183,19 @@
       "tabChats": "Chats",
       "tabGroups": "Groups",
       "unnamedGroup": "Unnamed group",
-      "noGroups": "No groups yet. Turn on \"Read groups\" for the number in Settings > WhatsApp."
+      "noGroups": "No groups yet. Turn on \"Read groups\" for the number in Settings > WhatsApp.",
+      "searchOrNumberPlaceholder": "Search or type a number...",
+      "newConversation": "New conversation",
+      "chatWith": "Chat with {phone}",
+      "chatWithHintStarter": "Open the chat and write",
+      "chatWithHintPro": "Open the chat (the first message is a template)",
+      "newConversationDescStarter": "Type the WhatsApp number. The name is optional and saves the contact.",
+      "newConversationDescPro": "Type the WhatsApp number. The name is optional and saves the contact. On Pro the first message must be an approved template.",
+      "newPhonePlaceholder": "Number, e.g. +1 415 555 1212",
+      "newPhoneInvalid": "Invalid number. Use + and the country code.",
+      "newNamePlaceholder": "Contact name (optional)",
+      "cancel": "Cancel",
+      "openConversation": "Open conversation"
     },
     "messageThread": {
       "backToConversations": "Back to conversations",
@@ -225,7 +238,8 @@
       "ownersLocked": "This lead already has an owner. Only the owner or an admin changes its owners.",
       "ownersLockedShort": "Only an admin changes owners",
       "coverLead": "Take it on with the owners",
-      "coverLeadAway": "Owners away: take over the chat"
+      "coverLeadAway": "Owners away: take over the chat",
+      "writeFirstMessageHint": "Write the first message to start the conversation"
     },
     "sessionTimer": {
       "expired": "Expired",
@@ -3092,6 +3106,12 @@
       "submitFailed": "Failed to submit template.",
       "metaApiStatus": "Meta API error: {status}",
       "syncFailed": "Failed to sync templates"
+    },
+    "startConversation": {
+      "badPhone": "Invalid number. Use + and the country code.",
+      "noNumber": "Connect a WhatsApp number before starting conversations.",
+      "otherAgent": "This contact is already talking to another agent. Ask an admin to add you.",
+      "failed": "Couldn't open the conversation"
     }
   },
   "Admin": {

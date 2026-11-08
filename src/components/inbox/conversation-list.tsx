@@ -11,7 +11,18 @@ import {
 } from "@/lib/inbox/conversations";
 import { cn } from "@/lib/utils";
 import type { Conversation, ConversationStatus, Tag } from "@/types";
-import { Search, ChevronDown, X, Users } from "lucide-react";
+import { Search, ChevronDown, X, Users, MessageSquarePlus, Loader2 } from "lucide-react";
+import { formatTypedPhone, parseTypedPhone } from "@/lib/inbox/typed-phone";
+import { phonesMatch } from "@/lib/whatsapp/phone-utils";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { STATUS_STYLES, StatusChip } from "./status-chip";
 import { formatDistanceToNow } from "date-fns";
 import { useTranslations } from "next-intl";
@@ -38,6 +49,12 @@ interface ConversationListProps {
    * or the tab was throttled. Optional so existing callers keep working.
    */
   resyncToken?: number;
+  /**
+   * Open (find or create) the chat with a typed number — the
+   * "Conversar com ..." row and the "Nova conversa" dialog. Resolves
+   * true when the chat opened.
+   */
+  onStartConversation?: (phone: string, name?: string) => Promise<boolean>;
 }
 
 const STATUS_LABEL_KEYS: Record<ConversationStatus, "statusOpen" | "statusPending" | "statusClosed"> = {
@@ -56,6 +73,7 @@ export function ConversationList({
   conversations,
   onConversationsLoaded,
   resyncToken = 0,
+  onStartConversation,
 }: ConversationListProps) {
   const t = useTranslations("Inbox.conversationList");
   const tChannel = useTranslations("Inbox.channel");
@@ -75,7 +93,7 @@ export function ConversationList({
   const [kind, setKind] = useState<"chats" | "groups">("chats");
   // Starter accounts with several numbers: owner / admin can narrow the
   // list to one number (agents only see their own chats anyway).
-  const { user, account, canManageMembers } = useAuth();
+  const { user, account, canManageMembers, canSendMessages } = useAuth();
   const { channels } = useChannels(tChannel("unnamed"));
   const showNumberFilter = account?.plan === "starter" && canManageMembers && channels.length > 1;
   const [channelFilter, setChannelFilter] = useState<string | null>(null);
@@ -202,11 +220,17 @@ export function ConversationList({
 
     if (search.trim()) {
       const q = search.toLowerCase();
+      // "71 98888-7777" finds the contact stored as 5571988887777.
+      const qDigits = /[a-z]/i.test(search) ? "" : search.replace(/\D/g, "");
+      const asPhone = parseTypedPhone(search);
       result = result.filter((c) => {
         const name = c.contact?.name?.toLowerCase() ?? "";
         const phone = c.contact?.phone?.toLowerCase() ?? "";
         const lastMsg = c.last_message_text?.toLowerCase() ?? "";
-        return name.includes(q) || phone.includes(q) || lastMsg.includes(q);
+        if (name.includes(q) || phone.includes(q) || lastMsg.includes(q)) return true;
+        if (!phone) return false;
+        if (asPhone && phonesMatch(phone, asPhone)) return true;
+        return qDigits.length >= 4 && phone.replace(/\D/g, "").includes(qDigits);
       });
     }
 
@@ -258,6 +282,50 @@ export function ConversationList({
     []
   );
 
+  // "Conversar com +55 ..." — like WhatsApp, a number typed in the
+  // search offers to open a chat with it, saved as a contact or not.
+  const canStart = Boolean(onStartConversation) && canSendMessages;
+  const typedPhone = canStart && kind === "chats" ? parseTypedPhone(search) : null;
+  const typedPhoneKnown = useMemo(
+    () =>
+      typedPhone
+        ? conversations.some((c) => !c.is_group && c.contact?.phone && phonesMatch(c.contact.phone, typedPhone))
+        : false,
+    [typedPhone, conversations]
+  );
+  const [starting, setStarting] = useState(false);
+  const [newOpen, setNewOpen] = useState(false);
+  const [newPhone, setNewPhone] = useState("");
+  const [newName, setNewName] = useState("");
+  const newPhoneParsed = parseTypedPhone(newPhone);
+
+  const start = useCallback(
+    async (phone: string, name?: string) => {
+      if (!onStartConversation || starting) return false;
+      setStarting(true);
+      try {
+        const ok = await onStartConversation(phone, name);
+        if (ok) setSearch("");
+        return ok;
+      } finally {
+        setStarting(false);
+      }
+    },
+    [onStartConversation, starting]
+  );
+
+  const openNewDialog = useCallback(() => {
+    setNewPhone(parseTypedPhone(search) ? search : "");
+    setNewName("");
+    setNewOpen(true);
+  }, [search]);
+
+  const submitNew = useCallback(async () => {
+    if (!newPhoneParsed) return;
+    const ok = await start(newPhoneParsed, newName.trim() || undefined);
+    if (ok) setNewOpen(false);
+  }, [newPhoneParsed, newName, start]);
+
   const handleSelect = useCallback(
     (conv: Conversation) => {
       onSelect(conv);
@@ -296,14 +364,32 @@ export function ConversationList({
             ))}
           </div>
         )}
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            value={search}
-            onChange={handleSearchChange}
-            placeholder={t("searchPlaceholder")}
-            className="border-border bg-muted pl-9 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50"
-          />
+        <div className="flex items-center gap-1.5">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+            <Input
+              value={search}
+              onChange={handleSearchChange}
+              placeholder={canStart ? t("searchOrNumberPlaceholder") : t("searchPlaceholder")}
+              className="border-border bg-muted pl-9 text-sm text-foreground placeholder-muted-foreground focus:border-primary/50"
+              onKeyDown={(e) => {
+                if (e.key === "Enter" && typedPhone && !typedPhoneKnown) void start(typedPhone);
+              }}
+            />
+          </div>
+          {canStart && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={openNewDialog}
+              title={t("newConversation")}
+              aria-label={t("newConversation")}
+              className="shrink-0 text-muted-foreground hover:text-foreground"
+            >
+              <MessageSquarePlus className="h-4 w-4" />
+            </Button>
+          )}
         </div>
 
         <div className="flex flex-wrap items-center gap-1" role="group" aria-label={t("filterByStatus")}>
@@ -503,11 +589,32 @@ export function ConversationList({
           space — the list then overflows and gets clipped by the
           parent's overflow-hidden with no scrollbar (issue #229). */}
       <ScrollArea className="min-h-0 flex-1">
+        {typedPhone && !typedPhoneKnown && (
+          <button
+            type="button"
+            onClick={() => void start(typedPhone)}
+            disabled={starting}
+            className="flex w-full items-center gap-3 border-b border-border px-4 py-3 text-left transition-colors hover:bg-muted/60 disabled:opacity-60"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-primary/15 text-primary">
+              {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <MessageSquarePlus className="h-4 w-4" />}
+            </span>
+            <span className="min-w-0">
+              <span className="block truncate text-sm font-medium text-foreground">
+                {t("chatWith", { phone: formatTypedPhone(typedPhone) })}
+              </span>
+              <span className="block truncate text-xs text-muted-foreground">
+                {account?.plan === "starter" ? t("chatWithHintStarter") : t("chatWithHintPro")}
+              </span>
+            </span>
+          </button>
+        )}
         {loading ? (
           <div className="flex items-center justify-center py-12">
             <div className="h-5 w-5 animate-spin rounded-full border-2 border-primary border-t-transparent" />
           </div>
         ) : filtered.length === 0 ? (
+          typedPhone && !typedPhoneKnown ? null :
           <div className="px-4 py-12 text-center">
             <p className="text-sm text-muted-foreground">
               {kind === "groups" ? t("noGroups") : t("noConversations")}
@@ -527,6 +634,55 @@ export function ConversationList({
           </div>
         )}
       </ScrollArea>
+
+      <Dialog open={newOpen} onOpenChange={(v) => !starting && setNewOpen(v)}>
+        <DialogContent className="bg-popover text-popover-foreground">
+          <DialogHeader>
+            <DialogTitle>{t("newConversation")}</DialogTitle>
+            <DialogDescription className="text-muted-foreground">
+              {account?.plan === "starter" ? t("newConversationDescStarter") : t("newConversationDescPro")}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-2">
+            <Input
+              value={newPhone}
+              onChange={(e) => setNewPhone(e.target.value)}
+              placeholder={t("newPhonePlaceholder")}
+              inputMode="tel"
+              className="bg-muted"
+              autoFocus
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void submitNew();
+              }}
+            />
+            {newPhone.trim() && !newPhoneParsed && (
+              <p className="text-xs text-destructive">{t("newPhoneInvalid")}</p>
+            )}
+            {newPhoneParsed && (
+              <p className="text-xs text-muted-foreground">{formatTypedPhone(newPhoneParsed)}</p>
+            )}
+            <Input
+              value={newName}
+              onChange={(e) => setNewName(e.target.value)}
+              placeholder={t("newNamePlaceholder")}
+              maxLength={120}
+              className="bg-muted"
+              onKeyDown={(e) => {
+                if (e.key === "Enter") void submitNew();
+              }}
+            />
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setNewOpen(false)} disabled={starting}>
+              {t("cancel")}
+            </Button>
+            <Button onClick={() => void submitNew()} disabled={!newPhoneParsed || starting}>
+              {starting && <Loader2 className="h-4 w-4 animate-spin" />}
+              {t("openConversation")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

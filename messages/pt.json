@@ -159,7 +159,8 @@
   },
   "Inbox": {
     "page": {
-      "whatsappNotConnected": "O WhatsApp® não está conectado. Vá em Configurações para conectar sua conta."
+      "whatsappNotConnected": "O WhatsApp® não está conectado. Vá em Configurações para conectar sua conta.",
+      "startFailed": "Não foi possível abrir a conversa"
     },
     "conversationList": {
       "searchPlaceholder": "Buscar conversas...",
@@ -182,7 +183,19 @@
       "tabChats": "Conversas",
       "tabGroups": "Grupos",
       "unnamedGroup": "Grupo sem nome",
-      "noGroups": "Nenhum grupo ainda. Ligue \"Ler grupos\" no número em Configurações > WhatsApp."
+      "noGroups": "Nenhum grupo ainda. Ligue \"Ler grupos\" no número em Configurações > WhatsApp.",
+      "searchOrNumberPlaceholder": "Buscar ou digitar um número...",
+      "newConversation": "Nova conversa",
+      "chatWith": "Conversar com {phone}",
+      "chatWithHintStarter": "Abrir conversa e escrever",
+      "chatWithHintPro": "Abrir conversa (a primeira mensagem é um modelo)",
+      "newConversationDescStarter": "Digite o número do WhatsApp. O nome é opcional e salva o contato.",
+      "newConversationDescPro": "Digite o número do WhatsApp. O nome é opcional e salva o contato. No plano Pro a primeira mensagem precisa ser um modelo aprovado.",
+      "newPhonePlaceholder": "Número, ex.: 71 98888-7777",
+      "newPhoneInvalid": "Número inválido. Use DDD + número, ou + e o código do país.",
+      "newNamePlaceholder": "Nome do contato (opcional)",
+      "cancel": "Cancelar",
+      "openConversation": "Abrir conversa"
     },
     "messageThread": {
       "backToConversations": "Voltar às conversas",
@@ -225,7 +238,8 @@
       "ownersLocked": "Este lead já tem dono. Só o proprietário ou um administrador muda os donos.",
       "ownersLockedShort": "Só o admin muda os donos",
       "coverLead": "Assumir junto com os donos",
-      "coverLeadAway": "Donos ausentes: assumir a conversa"
+      "coverLeadAway": "Donos ausentes: assumir a conversa",
+      "writeFirstMessageHint": "Escreva a primeira mensagem para iniciar a conversa"
     },
     "sessionTimer": {
       "expired": "Expirada",
@@ -3092,6 +3106,12 @@
       "submitFailed": "Falha ao enviar o modelo.",
       "metaApiStatus": "Erro da API da Meta: {status}",
       "syncFailed": "Falha ao sincronizar os modelos"
+    },
+    "startConversation": {
+      "badPhone": "Número inválido. Use DDD + número, ou + e o código do país.",
+      "noNumber": "Conecte um número de WhatsApp antes de iniciar conversas.",
+      "otherAgent": "Esse contato já está em conversa com outro atendente. Peça a um administrador para incluir você.",
+      "failed": "Não foi possível abrir a conversa"
     }
   },
   "Admin": {
