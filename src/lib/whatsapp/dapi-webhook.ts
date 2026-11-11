@@ -113,13 +113,54 @@ function unwrap(content: Obj): Obj {
   return content
 }
 
-function mediaRef(sessionId: string, m: Obj, fallbackMime: string): DapiMediaRef {
+const MIME_BY_EXTENSION: Record<string, string> = {
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  gif: 'image/gif',
+  mp4: 'video/mp4',
+  '3gp': 'video/3gpp',
+  mov: 'video/quicktime',
+  ogg: 'audio/ogg',
+  oga: 'audio/ogg',
+  opus: 'audio/ogg',
+  mp3: 'audio/mpeg',
+  m4a: 'audio/mp4',
+  aac: 'audio/aac',
+  amr: 'audio/amr',
+  pdf: 'application/pdf',
+}
+
+const MIME_BY_KIND: Record<string, string> = {
+  image: 'image/jpeg',
+  video: 'video/mp4',
+  audio: 'audio/ogg',
+  sticker: 'image/webp',
+}
+
+/**
+ * The media's MIME type. D-API sometimes reports
+ * "application/octet-stream" (or nothing) for photos and videos sent from
+ * the phone, which the media bucket refuses, so the file was never saved.
+ * Then the URL's extension decides, and failing that the message kind.
+ */
+export function dapiMediaMime(reported: string | undefined, url: string | undefined, kind: string): string {
+  const clean = reported?.split(';')[0].trim().toLowerCase()
+  if (clean && clean !== 'application/octet-stream' && clean !== 'binary/octet-stream') return reported as string
+  const ext = url?.split('?')[0].split('#')[0].match(/\.([a-z0-9]{2,5})$/i)?.[1]?.toLowerCase()
+  if (ext && MIME_BY_EXTENSION[ext]) return MIME_BY_EXTENSION[ext]
+  return MIME_BY_KIND[kind] ?? 'application/octet-stream'
+}
+
+function mediaRef(sessionId: string, m: Obj, kind: string): DapiMediaRef {
+  const url = str(g(m, 'url', 'mediaUrl', 'media_url'))
   return {
     s: sessionId,
-    url: str(g(m, 'url', 'mediaUrl', 'media_url')),
+    url,
     direct_path: str(g(m, 'directPath', 'direct_path')),
     media_key: bytes(g(m, 'mediaKey', 'media_key')),
-    mimetype: str(g(m, 'mimetype', 'mimeType', 'mime_type')) ?? fallbackMime,
+    mimetype: dapiMediaMime(str(g(m, 'mimetype', 'mimeType', 'mime_type')), url, kind),
     file_enc_sha256: bytes(g(m, 'fileEncSha256', 'fileEncSHA256', 'file_enc_sha256')),
     file_sha256: bytes(g(m, 'fileSha256', 'fileSHA256', 'file_sha256')),
     file_length: num(g(m, 'fileLength', 'file_length', 'fileSize')),
@@ -147,7 +188,7 @@ function fromProto(sessionId: string, content: Obj): Omit<WhatsAppMessage, 'id' 
   for (const [key, kind] of Object.entries(MEDIA_KINDS)) {
     const m = g(c, key)
     if (!isObj(m)) continue
-    const ref = mediaRef(sessionId, m, kind === 'sticker' ? 'image/webp' : 'application/octet-stream')
+    const ref = mediaRef(sessionId, m, kind)
     const media = {
       id: encodeDapiMediaId(ref),
       mime_type: ref.mimetype,
@@ -233,7 +274,7 @@ function fromFlat(sessionId: string, m: Obj): Omit<WhatsAppMessage, 'id' | 'from
 
   const kind = type === 'ptt' || type === 'voice' ? 'audio' : type
   if (['image', 'video', 'audio', 'document', 'sticker'].includes(kind)) {
-    const ref = mediaRef(sessionId, m, 'application/octet-stream')
+    const ref = mediaRef(sessionId, m, kind)
     const media = { id: encodeDapiMediaId(ref), mime_type: ref.mimetype }
     if (kind === 'document') {
       return { type: 'document', document: { ...media, caption, filename: str(g(m, 'fileName')) }, ...context }

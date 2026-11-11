@@ -191,8 +191,11 @@ export async function mirrorInboundMedia(
     // Meta's metadata MIME wins over the CDN response header: it's what
     // the message row records, so mirroring it keeps `media_type` and
     // the stored object describing the same thing.
+    // A generic "octet-stream" says nothing (D-API reports it for some
+    // phone photos): then the CDN's header gets its turn.
+    const metaMime = normalizedMime === "application/octet-stream" ? null : normalizedMime;
     const uploadType =
-      normalizedMime ??
+      metaMime ??
       normalizeMimeType(contentType) ??
       "application/octet-stream";
 

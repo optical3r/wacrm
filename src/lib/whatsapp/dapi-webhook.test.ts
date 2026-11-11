@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { extractDapiGroupMessages, translateDapiWebhook } from './dapi-webhook'
+import { dapiMediaMime, extractDapiGroupMessages, translateDapiWebhook } from './dapi-webhook'
 import { decodeDapiMediaId } from './dapi'
 
 const PNID = 'dapi:labcrm-acc1'
@@ -231,5 +231,20 @@ describe('extractDapiGroupMessages', () => {
     ).toEqual([])
     expect(extractDapiGroupMessages({ event: 'message.read', data: { id: 'G1', to: { jid: '120363000111@g.us' } } }, PNID)).toEqual([])
     expect(extractDapiGroupMessages({ event: 'connection.status', data: { status: 'connected' } }, PNID)).toEqual([])
+  })
+})
+
+describe('dapiMediaMime', () => {
+  it('keeps a real MIME type', () => {
+    expect(dapiMediaMime('image/png', 'https://x/a.jpg', 'image')).toBe('image/png')
+  })
+  it('reads octet-stream media from the URL extension', () => {
+    expect(dapiMediaMime('application/octet-stream', 'https://s3/x/image/3AD0.jpg', 'image')).toBe('image/jpeg')
+    expect(dapiMediaMime('application/octet-stream', 'https://s3/x/video/3A82.mp4?sig=1', 'video')).toBe('video/mp4')
+  })
+  it('falls back to the message kind', () => {
+    expect(dapiMediaMime(undefined, undefined, 'video')).toBe('video/mp4')
+    expect(dapiMediaMime('application/octet-stream', 'https://x/file', 'sticker')).toBe('image/webp')
+    expect(dapiMediaMime(undefined, undefined, 'document')).toBe('application/octet-stream')
   })
 })
