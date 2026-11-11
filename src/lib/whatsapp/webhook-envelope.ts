@@ -55,10 +55,21 @@ function findEntries(raw: unknown, depth: number): { entry: WhatsAppWebhookEntry
     if (found) return found
   }
 
-  if (looksLikeChangeValue(raw)) {
-    return { entry: [{ id: wabaIdOf(raw), changes: [{ field: 'messages', value: raw }] } as WhatsAppWebhookEntry] }
+  // What Coexy actually sends (seen in production 2026-11-11): the bare
+  // change value, with no field name. Infer the field from its shape.
+  const bareField = bareValueField(raw)
+  if (bareField) {
+    return { entry: [{ id: wabaIdOf(raw), changes: [{ field: bareField, value: raw }] } as WhatsAppWebhookEntry] }
   }
   return null
+}
+
+function bareValueField(v: Obj): string | null {
+  if (Array.isArray(v.message_echoes)) return 'smb_message_echoes'
+  if (v.message_template_id !== undefined) {
+    return v.new_quality_score !== undefined ? 'message_template_quality_update' : 'message_template_status_update'
+  }
+  return looksLikeChangeValue(v) ? 'messages' : null
 }
 
 function looksLikeChangeValue(v: Obj): boolean {

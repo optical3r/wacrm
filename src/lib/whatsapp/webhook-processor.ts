@@ -256,10 +256,6 @@ export async function POST(request: Request) {
   }
   // Coexy may wrap Meta's body in its own envelope (event name + data).
   const body: { entry?: WhatsAppWebhookEntry[] } = unwrapWebhookBody(parsed) ?? {}
-  if (isCoexy() && body.entry) {
-    // Temporary, while the Coexy envelope is confirmed in production.
-    console.info('[webhook] coexy delivery shape:', describeShape(parsed))
-  }
   if (!body.entry) {
     // Keys only, never values: enough to see a new envelope shape.
     console.warn('[webhook] no Meta entry in delivery; shape:', describeShape(parsed))

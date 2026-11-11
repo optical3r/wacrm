@@ -31,6 +31,16 @@ describe('unwrapWebhookBody', () => {
     expect(out?.entry[0].changes[0].value).toEqual(value)
   })
 
+  it('names the field of a bare value, the way Coexy sends it', () => {
+    expect(unwrapWebhookBody(value)?.entry[0].changes[0].field).toBe('messages')
+    const echo = { messaging_product: 'whatsapp', metadata: value.metadata, message_echoes: [{ id: 'wamid.2' }] }
+    expect(unwrapWebhookBody(echo)?.entry[0].changes[0].field).toBe('smb_message_echoes')
+    const tpl = { event: 'APPROVED', message_template_id: 1, message_template_name: 'x' }
+    expect(unwrapWebhookBody(tpl)?.entry[0].changes[0].field).toBe('message_template_status_update')
+    const quality = { message_template_id: 1, previous_quality_score: 'GREEN', new_quality_score: 'YELLOW' }
+    expect(unwrapWebhookBody(quality)?.entry[0].changes[0].field).toBe('message_template_quality_update')
+  })
+
   it('returns null for anything else', () => {
     expect(unwrapWebhookBody({ event: 'account_update', data: { foo: 1 } })).toBeNull()
     expect(unwrapWebhookBody(null)).toBeNull()
