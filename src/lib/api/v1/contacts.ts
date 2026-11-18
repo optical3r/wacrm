@@ -250,3 +250,35 @@ export async function getContactById(
   if (error || !data) return null;
   return serializeContact(data as Record<string, unknown>);
 }
+
+/**
+ * Add tags (by name, case-insensitive; missing ones are created) to a
+ * contact without removing the ones it already has. Each new join
+ * dispatches the tag_added automations, like the dashboard does.
+ */
+export async function addContactTagsByName(
+  db: SupabaseClient,
+  accountId: string,
+  auditUserId: string,
+  contactId: string,
+  tagNames: string[]
+): Promise<void> {
+  const keys = [...new Set(tagNames.map((n) => n.trim().toLowerCase()).filter(Boolean))];
+  if (keys.length === 0) return;
+  const { tagIdByKey } = await resolveImportTagIds(db, {
+    accountId,
+    userId: auditUserId,
+    tagNames,
+    canCreateTags: true,
+  });
+  for (const key of keys) {
+    const tagId = tagIdByKey.get(key);
+    if (!tagId) continue;
+    try {
+      await addContactTagAndDispatch({ db, accountId, contactId, tagId });
+    } catch (error) {
+      console.error('[api/v1/contacts] tag add failed:', error);
+      throw new ContactError('Failed to update contact tags', 500);
+    }
+  }
+}

@@ -18,7 +18,15 @@ export const API_SCOPES = [
   'messages:read',
   'contacts:read',
   'contacts:write',
+  'contacts:delete',
+  'tags:read',
+  'tags:write',
+  'fields:read',
+  'fields:write',
+  'notes:read',
+  'notes:write',
   'conversations:read',
+  'conversations:write',
   'broadcasts:send',
   'webhooks:manage',
 ] as const;
@@ -27,13 +35,21 @@ export type ApiScope = (typeof API_SCOPES)[number];
 
 /** Human-readable descriptions, surfaced in the key-creation UI. */
 export const SCOPE_DESCRIPTIONS: Record<ApiScope, string> = {
-  'messages:send': 'Send WhatsApp messages',
-  'messages:read': 'Read messages and their delivery status',
-  'contacts:read': 'List and read contacts',
-  'contacts:write': 'Create and update contacts',
-  'conversations:read': 'List and read conversations',
-  'broadcasts:send': 'Launch broadcast campaigns',
-  'webhooks:manage': 'Register and manage outbound event webhooks',
+  'messages:send': 'Enviar mensagens de WhatsApp',
+  'messages:read': 'Ler mensagens e o status de entrega',
+  'contacts:read': 'Listar e ler contatos',
+  'contacts:write': 'Criar, editar e importar contatos',
+  'contacts:delete': 'Apagar contatos (com as conversas deles)',
+  'tags:read': 'Listar etiquetas',
+  'tags:write': 'Criar, editar e apagar etiquetas; pôr e tirar de contatos',
+  'fields:read': 'Ler campos personalizados e os valores dos contatos',
+  'fields:write': 'Criar, editar e apagar campos; gravar valores nos contatos',
+  'notes:read': 'Ler as notas dos contatos',
+  'notes:write': 'Criar, editar e apagar notas',
+  'conversations:read': 'Listar e ler conversas',
+  'conversations:write': 'Iniciar conversas, mudar status e donos, marcar como lida',
+  'broadcasts:send': 'Criar disparos e ver o andamento',
+  'webhooks:manage': 'Cadastrar e gerenciar webhooks de eventos',
 };
 
 /** Type-narrow an unknown value into a valid `ApiScope`. */

@@ -41,15 +41,23 @@ key's next request. Revoked keys stay in the list as an audit trail.
 A key can do only what its scopes allow — independent of who created
 it. Grant the minimum.
 
-| Scope                | Allows                                   |
-| -------------------- | ---------------------------------------- |
-| `messages:send`      | Send WhatsApp messages                   |
-| `messages:read`      | Read messages and delivery status        |
-| `contacts:read`      | List and read contacts                   |
-| `contacts:write`     | Create and update contacts               |
-| `conversations:read` | List and read conversations              |
-| `broadcasts:send`    | Launch broadcast campaigns               |
-| `webhooks:manage`    | Register and manage outbound webhooks    |
+| Scope                 | Allows                                                   |
+| --------------------- | -------------------------------------------------------- |
+| `messages:send`       | Send WhatsApp messages                                   |
+| `messages:read`       | Read messages and delivery status                        |
+| `contacts:read`       | List and read contacts                                   |
+| `contacts:write`      | Create, update and import contacts                       |
+| `contacts:delete`     | Delete contacts (with their conversations)               |
+| `tags:read`           | List tags                                                |
+| `tags:write`          | Create/rename/delete tags; add and remove them on contacts |
+| `fields:read`         | Read custom fields and contact values                    |
+| `fields:write`        | Create/rename/delete fields; set contact values          |
+| `notes:read`          | Read contact notes                                       |
+| `notes:write`         | Create, edit and delete notes                            |
+| `conversations:read`  | List and read conversations                              |
+| `conversations:write` | Start conversations, change status/owners, mark read     |
+| `broadcasts:send`     | Launch broadcast campaigns                               |
+| `webhooks:manage`     | Register and manage outbound webhooks                    |
 
 A key with **no scopes** still authenticates and can call
 `GET /api/v1/me` — useful for verifying a key works.
@@ -80,18 +88,14 @@ may be reworded.
 
 ## Rate limits
 
-Requests are limited **per key**: **120 requests per minute**. On a
-`429`, these headers tell you when to retry:
+Requests are limited **per key**, per minute: 60 on Starter and 120 on
+Pro by default (the super admin can set another limit per workspace).
+The counter lives in Postgres (`api_rate_hit`, migration 062), so it
+holds across every server instance. On a `429`, these headers tell you
+when to retry:
 
 - `Retry-After` — seconds until the window resets
 - `X-RateLimit-Limit`, `X-RateLimit-Remaining`, `X-RateLimit-Reset`
-
-> The limiter is in-memory and **per process**. A single-instance
-> deploy (the common case for a self-hosted fork) is fine as-is. If
-> you scale to multiple instances, swap the limiter for a shared
-> store (Redis/Upstash) — see the note at the top of
-> `src/lib/rate-limit.ts`. The limit is otherwise unenforced across
-> instances.
 
 ## Endpoints
 
@@ -271,6 +275,34 @@ request fails with `400 bad_request`. Response (202):
 Broadcast status + counts. Scope: `broadcasts:send`. `status` moves
 `sending` → `sent`; `delivered_count` / `read_count` keep climbing as
 Meta delivery webhooks arrive. `404` for another account's broadcast.
+
+### Contacts, tags, fields and notes (phase 2)
+
+| Method & path | Scope | Notes |
+| --- | --- | --- |
+| `DELETE /api/v1/contacts/{id}` | `contacts:delete` | Also deletes the contact's conversations |
+| `POST /api/v1/contacts/import` | `contacts:write` | `{ contacts: [{ phone, name?, email?, company?, tags? }] }`, up to 500; per-row results |
+| `GET /api/v1/tags` · `POST /api/v1/tags` | `tags:read` · `tags:write` | `{ name, color? }`; an existing name returns that tag (200) |
+| `GET` / `PATCH` / `DELETE /api/v1/tags/{id}` | `tags:read` · `tags:write` | |
+| `GET` / `POST /api/v1/contacts/{id}/tags` | `tags:read` · `tags:write` | POST `{ tag_id }` or `{ names: [...] }`; fires "tag added" automations |
+| `DELETE /api/v1/contacts/{id}/tags/{tagId}` | `tags:write` | |
+| `GET /api/v1/fields` · `POST /api/v1/fields` | `fields:read` · `fields:write` | `{ name }` (text fields) |
+| `PATCH` / `DELETE /api/v1/fields/{id}` | `fields:write` | |
+| `GET` / `PUT /api/v1/contacts/{id}/fields` | `fields:read` · `fields:write` | PUT `{ values: { "<field id>": "text" \| null } }` |
+| `GET` / `POST /api/v1/contacts/{id}/notes` | `notes:read` · `notes:write` | POST `{ text }` |
+| `PATCH` / `DELETE /api/v1/notes/{id}` | `notes:write` | |
+
+### Conversations (phase 2)
+
+| Method & path | Scope | Notes |
+| --- | --- | --- |
+| `GET /api/v1/conversations` | `conversations:read` | Filters: `status`, `contact_id`, `owner_id`, `unassigned=true`, `channel_id`, `unread=true`. Groups are excluded. |
+| `POST /api/v1/conversations` | `conversations:write` | `{ phone, name? }` — find or open the chat; sends nothing. National Brazilian numbers get `55`. |
+| `PATCH /api/v1/conversations/{id}` | `conversations:write` | `{ status?, owner_ids? }` — owners must be workspace members; `[]` = no owner |
+| `POST /api/v1/conversations/{id}/read` | `conversations:write` | Zeroes unread and marks the customer's messages read on WhatsApp |
+
+Every id that belongs to another workspace answers `404`, exactly like
+one that does not exist.
 
 ## Pagination
 

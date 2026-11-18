@@ -143,7 +143,12 @@ export function toApiErrorResponse(err: unknown): NextResponse {
  * Caller-visible failures thrown by the shared cores (contacts, send,
  * broadcast). Matched by name so this module needs no import of them.
  */
-const DOMAIN_ERRORS = new Set(['ContactError', 'SendMessageError', 'BroadcastError']);
+const DOMAIN_ERRORS = new Set([
+  'ContactError',
+  'SendMessageError',
+  'BroadcastError',
+  'ContactTagWriteError',
+]);
 
 function domainError(
   err: unknown

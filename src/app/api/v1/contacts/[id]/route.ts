@@ -1,6 +1,8 @@
 // ============================================================
-// GET   /api/v1/contacts/{id} — read a contact  (scope: contacts:read)
-// PATCH /api/v1/contacts/{id} — update a contact (scope: contacts:write)
+// GET    /api/v1/contacts/{id} — read a contact   (scope: contacts:read)
+// PATCH  /api/v1/contacts/{id} — update a contact (scope: contacts:write)
+// DELETE /api/v1/contacts/{id} — delete a contact and its conversations
+//                                (scope: contacts:delete)
 //
 // Both are account-scoped: a contact belonging to another account
 // returns 404 (never 403 — don't reveal it exists elsewhere).
@@ -77,4 +79,22 @@ export const PATCH = apiRoute<{ id: string }>('contacts:write', async (ctx, requ
 
     const contact = await getContactById(ctx.db.trusted, ctx.accountId, id);
     return ok(contact);
+});
+
+export const DELETE = apiRoute<{ id: string }>('contacts:delete', async (ctx, _request, { id }) => {
+  if (!isUuid(id)) return fail('not_found', 'Contact not found', 404);
+  // Groups are managed from the inbox, never deleted through the API.
+  const { data, error } = await ctx.db
+    .from('contacts')
+    .delete()
+    .eq('id', id)
+    .eq('is_group', false)
+    .select('id')
+    .maybeSingle();
+  if (error) {
+    console.error('[api/v1/contacts] delete error:', error);
+    return fail('internal', 'Failed to delete contact', 500);
+  }
+  if (!data) return fail('not_found', 'Contact not found', 404);
+  return ok({ id: data.id, deleted: true });
 });

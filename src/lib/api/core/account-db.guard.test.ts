@@ -27,6 +27,10 @@ const VETTED = [
   "sendMessageToConversation",
   "createBroadcast",
   "deliverBroadcast",
+  "addContactTagsByName",
+  "addContactTagAndDispatch",
+  "removeContactTag",
+  "markConversationReadOnWhatsApp",
 ];
 
 function walk(dir: string): string[] {
@@ -46,8 +50,8 @@ export function trustedMisuses(source: string): string[] {
   let m: RegExpExecArray | null;
   while ((m = re.exec(source))) {
     const before = source.slice(Math.max(0, m.index - 120), m.index);
-    // `<vetted>(\n   ctx.db` or `<vetted>(ctx.db`
-    const call = before.match(/([A-Za-z_]\w*)\(\s*[\w.]*$/);
+    // `<vetted>(ctx.db.trusted` or `<vetted>({ db: ctx.db.trusted`
+    const call = before.match(/([A-Za-z_]\w*)\(\s*(?:\{\s*db:\s*)?[\w.]*$/);
     if (!call || !VETTED.includes(call[1])) {
       out.push(source.slice(Math.max(0, m.index - 40), m.index + 8).replace(/\s+/g, " "));
     }
@@ -77,5 +81,7 @@ describe("account-scoped db guard", () => {
   it("flags .trusted used outside a vetted call", () => {
     expect(trustedMisuses("await ctx.db.trusted.from('contacts').select('*')")).toHaveLength(1);
     expect(trustedMisuses("await getContactById(ctx.db.trusted, ctx.accountId, id)")).toEqual([]);
+    expect(trustedMisuses("await addContactTagAndDispatch({ db: ctx.db.trusted, accountId })")).toEqual([]);
+    expect(trustedMisuses("await somethingElse({ db: ctx.db.trusted })")).toHaveLength(1);
   });
 });

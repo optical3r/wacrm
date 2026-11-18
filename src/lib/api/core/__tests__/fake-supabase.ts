@@ -41,7 +41,7 @@ export function createFakeSupabase(tables: Record<string, Row[]>) {
     };
 
     const b: any = {
-      select(_cols?: string) {
+      select() {
         if (op !== "select") returning = true;
         return b;
       },
@@ -50,8 +50,18 @@ export function createFakeSupabase(tables: Record<string, Row[]>) {
         payload = Array.isArray(rows) ? rows : [rows];
         return b;
       },
-      upsert(rows: Row | Row[]) {
-        return b.insert(rows);
+      upsert(rows: Row | Row[], opts?: { onConflict?: string }) {
+        const keys = opts?.onConflict?.split(",").map((k) => k.trim()) ?? [];
+        const list = Array.isArray(rows) ? rows : [rows];
+        const fresh: Row[] = [];
+        for (const r of list) {
+          const hit = keys.length
+            ? tableRows(table).find((x) => keys.every((k) => x[k] === r[k]))
+            : undefined;
+          if (hit) Object.assign(hit, r);
+          else fresh.push(r);
+        }
+        return b.insert(fresh);
       },
       update(p: Row) {
         op = "update";
@@ -64,7 +74,9 @@ export function createFakeSupabase(tables: Record<string, Row[]>) {
       },
       eq(col: string, val: unknown) {
         // `tag_filter.tag_id` style embedded filters are ignored.
-        if (!col.includes(".")) filters.push((r) => r[col] === val);
+        // '{}' compares an array column with the empty array.
+        if (val === "{}") filters.push((r) => Array.isArray(r[col]) && r[col].length === 0);
+        else if (!col.includes(".")) filters.push((r) => r[col] === val);
         return b;
       },
       neq(col: string, val: unknown) {
@@ -73,6 +85,14 @@ export function createFakeSupabase(tables: Record<string, Row[]>) {
       },
       in(col: string, vals: unknown[]) {
         filters.push((r) => vals.includes(r[col]));
+        return b;
+      },
+      contains(col: string, vals: unknown[]) {
+        filters.push((r) => Array.isArray(r[col]) && vals.every((v) => r[col].includes(v)));
+        return b;
+      },
+      gt(col: string, val: number) {
+        filters.push((r) => r[col] > val);
         return b;
       },
       is(col: string, val: unknown) {

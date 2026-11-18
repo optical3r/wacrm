@@ -15,6 +15,10 @@ export interface ApiConversation {
   contact_id: string;
   status: string;
   assigned_agent_id: string | null;
+  /** Every owner of the lead (assigned_agent_id is the first one). */
+  owner_ids: string[];
+  /** The number (whatsapp_config id) the chat last went through. */
+  last_channel_id: string | null;
   last_message_text: string | null;
   last_message_at: string | null;
   unread_count: number;
@@ -57,6 +61,8 @@ export function serializeConversation(conv: Conversation): ApiConversation {
     contact_id: conv.contact_id,
     status: conv.status,
     assigned_agent_id: conv.assigned_agent_id ?? null,
+    owner_ids: conv.owner_ids ?? [],
+    last_channel_id: conv.last_channel_id ?? null,
     last_message_text: conv.last_message_text ?? null,
     last_message_at: conv.last_message_at ?? null,
     unread_count: conv.unread_count ?? 0,

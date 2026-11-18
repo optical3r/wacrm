@@ -27,6 +27,17 @@ import * as broadcast from '@/app/api/v1/broadcasts/[id]/route';
 import * as webhooks from '@/app/api/v1/webhooks/route';
 import * as webhook from '@/app/api/v1/webhooks/[id]/route';
 import * as me from '@/app/api/v1/me/route';
+import * as contactsImport from '@/app/api/v1/contacts/import/route';
+import * as contactTags from '@/app/api/v1/contacts/[id]/tags/route';
+import * as contactTag from '@/app/api/v1/contacts/[id]/tags/[tagId]/route';
+import * as contactFields from '@/app/api/v1/contacts/[id]/fields/route';
+import * as contactNotes from '@/app/api/v1/contacts/[id]/notes/route';
+import * as tags from '@/app/api/v1/tags/route';
+import * as tag from '@/app/api/v1/tags/[id]/route';
+import * as fields from '@/app/api/v1/fields/route';
+import * as field from '@/app/api/v1/fields/[id]/route';
+import * as note from '@/app/api/v1/notes/[id]/route';
+import * as conversationRead from '@/app/api/v1/conversations/[id]/read/route';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Args = Record<string, any>;
@@ -40,7 +51,7 @@ export interface McpToolDef {
   kind: ToolKind;
   input: z.ZodRawShape;
   route: ApiRouteHandler<any>;
-  method: 'GET' | 'POST' | 'PATCH' | 'DELETE';
+  method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';
   path: (a: Args) => string;
   params?: (a: Args) => Record<string, string>;
   query?: (a: Args) => Record<string, unknown>;
@@ -95,17 +106,23 @@ export const MCP_TOOLS: McpToolDef[] = [
   {
     name: 'list_conversations',
     title: 'Listar conversas',
-    description: 'Lista conversas, mais novas primeiro. Filtra por status (open, pending, closed) ou por contato. Paginado.',
+    description:
+      'Lista conversas, mais novas primeiro. Filtra por status (open, pending, closed), contato, dono do lead, sem dono, número conectado ou só não lidas. Paginado.',
     kind: 'read',
     input: {
       status: z.enum(['open', 'pending', 'closed']).optional(),
       contact_id: z.string().optional().describe('Só conversas deste contato.'),
+      owner_id: z.string().optional().describe('Só leads deste dono (ID de usuário).'),
+      unassigned: z.boolean().optional().describe('true = só leads sem dono.'),
+      channel_id: z.string().optional().describe('Só conversas que passaram por este número.'),
+      unread: z.boolean().optional().describe('true = só conversas com mensagens não lidas.'),
       ...page,
     },
     route: conversations.GET,
     method: 'GET',
     path: () => '/api/v1/conversations',
-    query: (a) => pick(a, ['status', 'contact_id', 'limit', 'cursor']),
+    query: (a) =>
+      pick(a, ['status', 'contact_id', 'owner_id', 'unassigned', 'channel_id', 'unread', 'limit', 'cursor']),
   },
   {
     name: 'get_conversation',
@@ -243,6 +260,279 @@ export const MCP_TOOLS: McpToolDef[] = [
     route: webhook.DELETE,
     method: 'DELETE',
     path: (a) => `/api/v1/webhooks/${a.id}`,
+    params: (a) => ({ id: a.id }),
+  },
+
+  // ---- phase 2: tags ------------------------------------------------
+  {
+    name: 'list_tags',
+    title: 'Listar etiquetas',
+    description: 'Lista as etiquetas do workspace.',
+    kind: 'read',
+    input: {},
+    route: tags.GET,
+    method: 'GET',
+    path: () => '/api/v1/tags',
+  },
+  {
+    name: 'create_tag',
+    title: 'Criar etiqueta',
+    description: 'Cria uma etiqueta (ou devolve a que já tem esse nome).',
+    kind: 'write',
+    input: { name: z.string(), color: z.string().optional().describe('Cor #rrggbb.') },
+    route: tags.POST,
+    method: 'POST',
+    path: () => '/api/v1/tags',
+    body: (a) => pick(a, ['name', 'color']),
+  },
+  {
+    name: 'update_tag',
+    title: 'Editar etiqueta',
+    description: 'Renomeia ou muda a cor de uma etiqueta.',
+    kind: 'write',
+    input: { id: id('da etiqueta'), name: z.string().optional(), color: z.string().optional() },
+    route: tag.PATCH,
+    method: 'PATCH',
+    path: (a) => `/api/v1/tags/${a.id}`,
+    params: (a) => ({ id: a.id }),
+    body: (a) => pick(a, ['name', 'color']),
+  },
+  {
+    name: 'delete_tag',
+    title: 'Apagar etiqueta',
+    description: 'Apaga uma etiqueta e a tira de todos os contatos.',
+    kind: 'confirm',
+    input: { id: id('da etiqueta'), confirmar },
+    route: tag.DELETE,
+    method: 'DELETE',
+    path: (a) => `/api/v1/tags/${a.id}`,
+    params: (a) => ({ id: a.id }),
+  },
+  {
+    name: 'add_contact_tags',
+    title: 'Pôr etiquetas no contato',
+    description:
+      'Adiciona etiquetas a um contato, por nome (cria as que não existem) ou por ID. Dispara as automações de "etiqueta adicionada".',
+    kind: 'write',
+    input: {
+      contact_id: id('do contato'),
+      names: z.array(z.string()).optional().describe('Nomes das etiquetas.'),
+      tag_id: z.string().optional().describe('Ou o ID de uma etiqueta.'),
+    },
+    route: contactTags.POST,
+    method: 'POST',
+    path: (a) => `/api/v1/contacts/${a.contact_id}/tags`,
+    params: (a) => ({ id: a.contact_id }),
+    body: (a) => pick(a, ['names', 'tag_id']),
+  },
+  {
+    name: 'remove_contact_tag',
+    title: 'Tirar etiqueta do contato',
+    description: 'Tira uma etiqueta de um contato. A etiqueta continua existindo.',
+    kind: 'write',
+    input: { contact_id: id('do contato'), tag_id: id('da etiqueta') },
+    route: contactTag.DELETE,
+    method: 'DELETE',
+    path: (a) => `/api/v1/contacts/${a.contact_id}/tags/${a.tag_id}`,
+    params: (a) => ({ id: a.contact_id, tagId: a.tag_id }),
+  },
+  // ---- phase 2: custom fields ---------------------------------------
+  {
+    name: 'list_fields',
+    title: 'Listar campos personalizados',
+    description: 'Lista os campos personalizados de contato do workspace.',
+    kind: 'read',
+    input: {},
+    route: fields.GET,
+    method: 'GET',
+    path: () => '/api/v1/fields',
+  },
+  {
+    name: 'create_field',
+    title: 'Criar campo personalizado',
+    description: 'Cria um campo de texto para os contatos (ex.: CPF, Cidade).',
+    kind: 'write',
+    input: { name: z.string() },
+    route: fields.POST,
+    method: 'POST',
+    path: () => '/api/v1/fields',
+    body: (a) => pick(a, ['name']),
+  },
+  {
+    name: 'rename_field',
+    title: 'Renomear campo personalizado',
+    description: 'Muda o nome de um campo personalizado.',
+    kind: 'write',
+    input: { id: id('do campo'), name: z.string() },
+    route: field.PATCH,
+    method: 'PATCH',
+    path: (a) => `/api/v1/fields/${a.id}`,
+    params: (a) => ({ id: a.id }),
+    body: (a) => pick(a, ['name']),
+  },
+  {
+    name: 'delete_field',
+    title: 'Apagar campo personalizado',
+    description: 'Apaga um campo e o valor dele em todos os contatos.',
+    kind: 'confirm',
+    input: { id: id('do campo'), confirmar },
+    route: field.DELETE,
+    method: 'DELETE',
+    path: (a) => `/api/v1/fields/${a.id}`,
+    params: (a) => ({ id: a.id }),
+  },
+  {
+    name: 'get_contact_fields',
+    title: 'Ver campos do contato',
+    description: 'Mostra todos os campos personalizados com o valor deste contato.',
+    kind: 'read',
+    input: { contact_id: id('do contato') },
+    route: contactFields.GET,
+    method: 'GET',
+    path: (a) => `/api/v1/contacts/${a.contact_id}/fields`,
+    params: (a) => ({ id: a.contact_id }),
+  },
+  {
+    name: 'set_contact_fields',
+    title: 'Gravar campos do contato',
+    description: 'Grava valores de campos personalizados num contato. null apaga o valor.',
+    kind: 'write',
+    input: {
+      contact_id: id('do contato'),
+      values: z.record(z.string(), z.string().nullable()).describe('{ ID do campo: valor }'),
+    },
+    route: contactFields.PUT,
+    method: 'PUT',
+    path: (a) => `/api/v1/contacts/${a.contact_id}/fields`,
+    params: (a) => ({ id: a.contact_id }),
+    body: (a) => pick(a, ['values']),
+  },
+  // ---- phase 2: notes -----------------------------------------------
+  {
+    name: 'list_contact_notes',
+    title: 'Ver notas do contato',
+    description: 'Lista as notas de um contato, mais novas primeiro.',
+    kind: 'read',
+    input: { contact_id: id('do contato') },
+    route: contactNotes.GET,
+    method: 'GET',
+    path: (a) => `/api/v1/contacts/${a.contact_id}/notes`,
+    params: (a) => ({ id: a.contact_id }),
+  },
+  {
+    name: 'add_contact_note',
+    title: 'Adicionar nota',
+    description: 'Escreve uma nota interna num contato (o cliente não vê).',
+    kind: 'write',
+    input: { contact_id: id('do contato'), text: z.string() },
+    route: contactNotes.POST,
+    method: 'POST',
+    path: (a) => `/api/v1/contacts/${a.contact_id}/notes`,
+    params: (a) => ({ id: a.contact_id }),
+    body: (a) => pick(a, ['text']),
+  },
+  {
+    name: 'update_note',
+    title: 'Editar nota',
+    description: 'Troca o texto de uma nota.',
+    kind: 'write',
+    input: { id: id('da nota'), text: z.string() },
+    route: note.PATCH,
+    method: 'PATCH',
+    path: (a) => `/api/v1/notes/${a.id}`,
+    params: (a) => ({ id: a.id }),
+    body: (a) => pick(a, ['text']),
+  },
+  {
+    name: 'delete_note',
+    title: 'Apagar nota',
+    description: 'Apaga uma nota.',
+    kind: 'confirm',
+    input: { id: id('da nota'), confirmar },
+    route: note.DELETE,
+    method: 'DELETE',
+    path: (a) => `/api/v1/notes/${a.id}`,
+    params: (a) => ({ id: a.id }),
+  },
+  // ---- phase 2: contacts --------------------------------------------
+  {
+    name: 'import_contacts',
+    title: 'Importar contatos',
+    description:
+      'Cria até 500 contatos de uma vez (os que já existem são mantidos e só ganham as etiquetas). Devolve o resultado de cada linha.',
+    kind: 'write',
+    input: {
+      contacts: z
+        .array(
+          z.object({
+            phone: z.string(),
+            name: z.string().optional(),
+            email: z.string().optional(),
+            company: z.string().optional(),
+            tags: z.array(z.string()).optional(),
+          })
+        )
+        .min(1)
+        .max(500),
+    },
+    route: contactsImport.POST,
+    method: 'POST',
+    path: () => '/api/v1/contacts/import',
+    body: (a) => pick(a, ['contacts']),
+  },
+  {
+    name: 'delete_contact',
+    title: 'Apagar contato',
+    description: 'Apaga um contato junto com as conversas, mensagens, notas e negócios dele.',
+    kind: 'confirm',
+    input: { id: id('do contato'), confirmar },
+    route: contact.DELETE,
+    method: 'DELETE',
+    path: (a) => `/api/v1/contacts/${a.id}`,
+    params: (a) => ({ id: a.id }),
+  },
+  // ---- phase 2: conversations ---------------------------------------
+  {
+    name: 'start_conversation',
+    title: 'Abrir conversa com um número',
+    description:
+      'Abre (ou encontra) a conversa com um telefone, criando o contato se preciso. Não envia nada; use send_message depois.',
+    kind: 'write',
+    input: {
+      phone: z.string().describe('+5511999999999, ou DDD e número para o Brasil.'),
+      name: z.string().optional().describe('Nome para um contato novo.'),
+    },
+    route: conversations.POST,
+    method: 'POST',
+    path: () => '/api/v1/conversations',
+    body: (a) => pick(a, ['phone', 'name']),
+  },
+  {
+    name: 'update_conversation',
+    title: 'Mudar status ou donos da conversa',
+    description:
+      'Muda o status (open, pending, closed) e/ou os donos do lead. owner_ids substitui a lista inteira; [] deixa sem dono. Os novos donos são notificados.',
+    kind: 'write',
+    input: {
+      id: id('da conversa'),
+      status: z.enum(['open', 'pending', 'closed']).optional(),
+      owner_ids: z.array(z.string()).optional().describe('IDs de usuário dos donos.'),
+    },
+    route: conversation.PATCH,
+    method: 'PATCH',
+    path: (a) => `/api/v1/conversations/${a.id}`,
+    params: (a) => ({ id: a.id }),
+    body: (a) => pick(a, ['status', 'owner_ids']),
+  },
+  {
+    name: 'mark_conversation_read',
+    title: 'Marcar conversa como lida',
+    description: 'Zera as não lidas no CRM e marca as mensagens do cliente como lidas no WhatsApp (tique azul).',
+    kind: 'write',
+    input: { id: id('da conversa') },
+    route: conversationRead.POST,
+    method: 'POST',
+    path: (a) => `/api/v1/conversations/${a.id}/read`,
     params: (a) => ({ id: a.id }),
   },
 ];

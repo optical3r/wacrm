@@ -36,8 +36,8 @@ function seed() {
       { id: ID.contactB, account_id: B, phone: "+5511900000002", name: "Bruno", is_group: false, created_at: "2026-11-01" },
     ],
     conversations: [
-      { id: ID.convA, account_id: A, contact_id: ID.contactA, status: "open", created_at: "2026-11-01" },
-      { id: ID.convB, account_id: B, contact_id: ID.contactB, status: "open", created_at: "2026-11-01" },
+      { id: ID.convA, account_id: A, contact_id: ID.contactA, status: "open", is_group: false, created_at: "2026-11-01" },
+      { id: ID.convB, account_id: B, contact_id: ID.contactB, status: "open", is_group: false, created_at: "2026-11-01" },
     ],
     messages: [
       { id: "m-a", conversation_id: ID.convA, content_text: "oi A", created_at: "2026-11-01" },
