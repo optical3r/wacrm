@@ -7,8 +7,8 @@
 // an encrypted copy and can never show it again.
 // ============================================================
 
-import { requireApiKey } from '@/lib/auth/api-context';
-import { ok, okList, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { apiRoute } from '@/lib/auth/api-context';
+import { ok, okList, fail } from '@/lib/api/v1/respond';
 import { encrypt } from '@/lib/whatsapp/encryption';
 import { normalizeEvents } from '@/lib/webhooks/events';
 import {
@@ -18,14 +18,10 @@ import {
   normalizeWebhookUrl,
 } from '@/lib/webhooks/endpoints';
 
-export async function GET(request: Request) {
-  try {
-    const ctx = await requireApiKey(request, 'webhooks:manage');
-
-    const { data, error } = await ctx.supabase
+export const GET = apiRoute('webhooks:manage', async (ctx) => {
+    const { data, error } = await ctx.db
       .from('webhook_endpoints')
       .select(WEBHOOK_PUBLIC_COLUMNS)
-      .eq('account_id', ctx.accountId)
       .order('created_at', { ascending: false });
 
     if (error) {
@@ -36,19 +32,14 @@ export async function GET(request: Request) {
     // The roster is small and settings-class — return it whole (the
     // list envelope's cursor is always null here).
     return okList(
-      (data ?? []).map((r) =>
+      ((data ?? []) as Record<string, unknown>[]).map((r) =>
         serializeWebhookEndpoint(r as Record<string, unknown>)
       ),
       null
     );
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
-}
+});
 
-export async function POST(request: Request) {
-  try {
-    const ctx = await requireApiKey(request, 'webhooks:manage');
+export const POST = apiRoute('webhooks:manage', async (ctx, request) => {
 
     const body = (await request.json().catch(() => null)) as Record<
       string,
@@ -74,10 +65,9 @@ export async function POST(request: Request) {
 
     const secret = generateWebhookSecret();
 
-    const { data: created, error } = await ctx.supabase
+    const { data: created, error } = await ctx.db
       .from('webhook_endpoints')
       .insert({
-        account_id: ctx.accountId,
         created_by: ctx.createdBy,
         url,
         secret: encrypt(secret),
@@ -96,7 +86,4 @@ export async function POST(request: Request) {
       { ...serializeWebhookEndpoint(created as Record<string, unknown>), secret },
       201
     );
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
-}
+});

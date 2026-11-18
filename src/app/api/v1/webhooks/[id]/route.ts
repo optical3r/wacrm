@@ -7,8 +7,8 @@
 // secret is never returned here — it's shown once at creation only.
 // ============================================================
 
-import { requireApiKey } from '@/lib/auth/api-context';
-import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { apiRoute } from '@/lib/auth/api-context';
+import { ok, fail } from '@/lib/api/v1/respond';
 import { normalizeEvents } from '@/lib/webhooks/events';
 import {
   WEBHOOK_PUBLIC_COLUMNS,
@@ -16,19 +16,11 @@ import {
   normalizeWebhookUrl,
 } from '@/lib/webhooks/endpoints';
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const ctx = await requireApiKey(request, 'webhooks:manage');
-    const { id } = await params;
-
-    const { data, error } = await ctx.supabase
+export const GET = apiRoute<{ id: string }>('webhooks:manage', async (ctx, request, { id }) => {
+    const { data, error } = await ctx.db
       .from('webhook_endpoints')
       .select(WEBHOOK_PUBLIC_COLUMNS)
       .eq('id', id)
-      .eq('account_id', ctx.accountId)
       .maybeSingle();
 
     if (error) {
@@ -38,19 +30,9 @@ export async function GET(
     if (!data) return fail('not_found', 'Webhook not found', 404);
 
     return ok(serializeWebhookEndpoint(data as Record<string, unknown>));
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
-}
+});
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const ctx = await requireApiKey(request, 'webhooks:manage');
-    const { id } = await params;
-
+export const PATCH = apiRoute<{ id: string }>('webhooks:manage', async (ctx, request, { id }) => {
     const body = (await request.json().catch(() => null)) as Record<
       string,
       unknown
@@ -97,11 +79,10 @@ export async function PATCH(
 
     // Scope the update by account_id so a foreign id touches nothing;
     // the returned row (null when unmatched) drives the 404.
-    const { data, error } = await ctx.supabase
+    const { data, error } = await ctx.db
       .from('webhook_endpoints')
       .update(updates)
       .eq('id', id)
-      .eq('account_id', ctx.accountId)
       .select(WEBHOOK_PUBLIC_COLUMNS)
       .maybeSingle();
 
@@ -112,24 +93,13 @@ export async function PATCH(
     if (!data) return fail('not_found', 'Webhook not found', 404);
 
     return ok(serializeWebhookEndpoint(data as Record<string, unknown>));
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
-}
+});
 
-export async function DELETE(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const ctx = await requireApiKey(request, 'webhooks:manage');
-    const { id } = await params;
-
-    const { data, error } = await ctx.supabase
+export const DELETE = apiRoute<{ id: string }>('webhooks:manage', async (ctx, request, { id }) => {
+    const { data, error } = await ctx.db
       .from('webhook_endpoints')
       .delete()
       .eq('id', id)
-      .eq('account_id', ctx.accountId)
       .select('id')
       .maybeSingle();
 
@@ -140,7 +110,4 @@ export async function DELETE(
     if (!data) return fail('not_found', 'Webhook not found', 404);
 
     return ok({ id: data.id, deleted: true });
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
-}
+});

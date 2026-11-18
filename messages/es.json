@@ -2161,7 +2161,25 @@
       "newKeyTitle": "Nueva clave de API",
       "newKeyDesc": "Nómbrala según la integración que la usará y concede solo los alcances que necesite.",
       "done": "Listo",
-      "networkError": "No se pudo conectar con el servidor"
+      "networkError": "No se pudo conectar con el servidor",
+      "mcpLabel": "Usar en MCP (Claude, Codex)",
+      "mcpHint": "Permite conectar esta clave como servidor MCP. Sin escritura, el MCP solo lee.",
+      "mcpWritesLabel": "Permitir escritura por MCP",
+      "mcpWritesHint": "Permite crear y editar contactos, enviar mensajes y difusiones. Los envíos y eliminaciones siguen pidiendo confirmación.",
+      "badgeMcp": "MCP: lectura",
+      "badgeMcpWrites": "MCP: lectura y escritura",
+      "badgeMcpOff": "MCP desactivado",
+      "toggleMcp": "MCP",
+      "toggleMcpWrites": "Escritura por MCP",
+      "updateSuccess": "Clave actualizada",
+      "updateFailed": "No se pudo actualizar la clave",
+      "connectTitle": "Conectar a Claude o Codex",
+      "connectDesc": "Usa una clave con MCP activado como servidor MCP remoto. Dirección: {url}",
+      "claudeCodeLabel": "Claude Code (terminal)",
+      "codexLabel": "Codex (archivo ~/.codex/config.toml)",
+      "codexEnvHint": "Luego define la variable LABCRM_API_KEY con la clave.",
+      "snippetCopied": "Copiado",
+      "yourKeyPlaceholder": "TU_CLAVE"
     },
     "deals": {
       "title": "Negocios y moneda",
@@ -2927,7 +2945,9 @@
         "nameRequired": "El nombre es obligatorio",
         "nameTooLong": "El nombre debe tener {max} caracteres o menos",
         "scopesInvalid": "Los alcances deben ser una lista de alcances válidos",
-        "createFailed": "Error al crear la clave de API"
+        "createFailed": "Error al crear la clave de API",
+        "nothingToUpdate": "Nada que actualizar",
+        "updateFailed": "No se pudo actualizar la clave"
       },
       "invitations": {
         "revokeFailed": "Error al revocar la invitación",

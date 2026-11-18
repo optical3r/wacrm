@@ -33,6 +33,7 @@ import {
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { RequireRole } from '@/components/auth/require-role';
 import { useAuth } from '@/hooks/use-auth';
 import {
@@ -48,6 +49,8 @@ interface ApiKey {
   name: string;
   key_prefix: string;
   scopes: string[];
+  mcp_enabled?: boolean;
+  mcp_allow_writes?: boolean;
   last_used_at: string | null;
   expires_at: string | null;
   revoked_at: string | null;
@@ -60,6 +63,46 @@ function fmtDate(iso: string): string {
     month: 'short',
     day: 'numeric',
   });
+}
+
+/** The remote MCP endpoint of this deployment. */
+function mcpUrl(): string {
+  return typeof window === 'undefined' ? '/api/mcp' : `${window.location.origin}/api/mcp`;
+}
+
+function claudeCodeSnippet(key: string): string {
+  return `claude mcp add --transport http labcrm ${mcpUrl()} --header "Authorization: Bearer ${key}"`;
+}
+
+function codexSnippet(): string {
+  return `[mcp_servers.labcrm]\nurl = "${mcpUrl()}"\nbearer_token_env_var = "LABCRM_API_KEY"`;
+}
+
+function SnippetBlock({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  const t = useTranslations('Settings.apiKeys');
+  async function copy() {
+    try {
+      await navigator.clipboard.writeText(value);
+      toast.success(t('snippetCopied'));
+    } catch {
+      toast.error(t('copyFailed'));
+    }
+  }
+  return (
+    <div className="space-y-1.5">
+      <div className="flex items-center justify-between gap-2">
+        <Label className="text-muted-foreground text-xs">{label}</Label>
+        <Button type="button" variant="ghost" size="sm" onClick={copy} className="h-7 px-2">
+          <Copy className="size-3.5" />
+          {t('copy')}
+        </Button>
+      </div>
+      <pre className="border-border bg-muted/50 overflow-x-auto rounded-md border p-2.5 font-mono text-[11px] leading-relaxed whitespace-pre">
+        {value}
+      </pre>
+      {hint && <p className="text-muted-foreground text-xs">{hint}</p>}
+    </div>
+  );
 }
 
 function keyStatus(k: ApiKey): 'active' | 'revoked' | 'expired' {
@@ -77,6 +120,7 @@ export function ApiKeysSettings() {
   const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
   const [revoking, setRevoking] = useState<string | null>(null);
+  const [updating, setUpdating] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     try {
@@ -99,6 +143,33 @@ export function ApiKeysSettings() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  async function handleMcpChange(
+    key: ApiKey,
+    patch: { mcpEnabled?: boolean; mcpAllowWrites?: boolean }
+  ) {
+    setUpdating(key.id);
+    try {
+      const res = await fetch(`/api/account/api-keys/${key.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(patch),
+      });
+      const payload = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        toast.error(payload.error || t('updateFailed'));
+        return;
+      }
+      const updated = payload.key as Pick<ApiKey, 'id' | 'mcp_enabled' | 'mcp_allow_writes'>;
+      setKeys((prev) => prev.map((k) => (k.id === key.id ? { ...k, ...updated } : k)));
+      toast.success(t('updateSuccess'));
+    } catch (err) {
+      console.error('[ApiKeysSettings] update error:', err);
+      toast.error(t('networkError'));
+    } finally {
+      setUpdating(null);
+    }
+  }
 
   async function handleRevoke(key: ApiKey) {
     setRevoking(key.id);
@@ -228,7 +299,36 @@ export function ApiKeysSettings() {
                             </Badge>
                           ))
                         )}
+                        {status === 'active' && (
+                          <Badge className="border-primary/30 bg-primary/10 text-primary text-[10px]">
+                            {k.mcp_enabled === false
+                              ? t('badgeMcpOff')
+                              : k.mcp_allow_writes
+                                ? t('badgeMcpWrites')
+                                : t('badgeMcp')}
+                          </Badge>
+                        )}
                       </div>
+                      {status === 'active' && canEditSettings && (
+                        <div className="mt-2 flex flex-wrap items-center gap-4">
+                          <label className="flex items-center gap-2 text-xs">
+                            <Switch
+                              checked={k.mcp_enabled !== false}
+                              disabled={updating === k.id}
+                              onCheckedChange={(v) => handleMcpChange(k, { mcpEnabled: v })}
+                            />
+                            {t('toggleMcp')}
+                          </label>
+                          <label className="flex items-center gap-2 text-xs">
+                            <Switch
+                              checked={k.mcp_allow_writes === true}
+                              disabled={updating === k.id || k.mcp_enabled === false}
+                              onCheckedChange={(v) => handleMcpChange(k, { mcpAllowWrites: v })}
+                            />
+                            {t('toggleMcpWrites')}
+                          </label>
+                        </div>
+                      )}
                       <p className="text-muted-foreground mt-1.5 text-xs">
                         {t('created', { date: fmtDate(k.created_at) })}
                         {' · '}
@@ -267,6 +367,19 @@ export function ApiKeysSettings() {
         </Card>
       )}
 
+      <Card>
+        <CardContent className="space-y-4 py-4">
+          <div>
+            <p className="text-foreground text-sm font-medium">{t('connectTitle')}</p>
+            <p className="text-muted-foreground mt-0.5 text-xs">
+              {t('connectDesc', { url: mcpUrl() })}
+            </p>
+          </div>
+          <SnippetBlock label={t('claudeCodeLabel')} value={claudeCodeSnippet(t('yourKeyPlaceholder'))} />
+          <SnippetBlock label={t('codexLabel')} value={codexSnippet()} hint={t('codexEnvHint')} />
+        </CardContent>
+      </Card>
+
       <CreateKeyDialog
         open={createOpen}
         onOpenChange={setCreateOpen}
@@ -292,6 +405,8 @@ function CreateKeyDialog({
   const t = useTranslations('Settings.apiKeys');
   const [name, setName] = useState('');
   const [scopes, setScopes] = useState<ApiScope[]>([]);
+  const [mcpEnabled, setMcpEnabled] = useState(true);
+  const [mcpAllowWrites, setMcpAllowWrites] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   // Once set, we switch from the form to the reveal view.
   const [createdKey, setCreatedKey] = useState<string | null>(null);
@@ -299,6 +414,8 @@ function CreateKeyDialog({
   function reset() {
     setName('');
     setScopes([]);
+    setMcpEnabled(true);
+    setMcpAllowWrites(false);
     setSubmitting(false);
     setCreatedKey(null);
   }
@@ -320,7 +437,7 @@ function CreateKeyDialog({
       const res = await fetch('/api/account/api-keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: trimmed, scopes }),
+        body: JSON.stringify({ name: trimmed, scopes, mcpEnabled, mcpAllowWrites }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -355,7 +472,7 @@ function CreateKeyDialog({
         onOpenChange(next);
       }}
     >
-      <DialogContent className="border-border bg-popover sm:max-w-md">
+      <DialogContent className="border-border bg-popover sm:max-w-lg">
         {createdKey ? (
           <>
             <DialogHeader>
@@ -382,6 +499,18 @@ function CreateKeyDialog({
                 </Button>
               </div>
             </div>
+
+            {mcpEnabled && (
+              <div className="space-y-3">
+                <p className="text-foreground text-sm font-medium">{t('connectTitle')}</p>
+                <SnippetBlock label={t('claudeCodeLabel')} value={claudeCodeSnippet(createdKey)} />
+                <SnippetBlock
+                  label={t('codexLabel')}
+                  value={codexSnippet()}
+                  hint={t('codexEnvHint')}
+                />
+              </div>
+            )}
 
             <DialogFooter>
               <Button
@@ -452,6 +581,37 @@ function CreateKeyDialog({
                     ),
                   })}
                 </p>
+              </div>
+
+              <div className="border-border space-y-3 rounded-md border p-3">
+                <label className="flex cursor-pointer items-start gap-2.5">
+                  <Checkbox
+                    checked={mcpEnabled}
+                    onCheckedChange={(checked) => {
+                      setMcpEnabled(checked === true);
+                      if (checked !== true) setMcpAllowWrites(false);
+                    }}
+                    className="mt-0.5"
+                  />
+                  <span className="min-w-0">
+                    <span className="text-foreground block text-xs font-medium">{t('mcpLabel')}</span>
+                    <span className="text-muted-foreground block text-xs">{t('mcpHint')}</span>
+                  </span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2.5">
+                  <Checkbox
+                    checked={mcpAllowWrites}
+                    disabled={!mcpEnabled}
+                    onCheckedChange={(checked) => setMcpAllowWrites(checked === true)}
+                    className="mt-0.5"
+                  />
+                  <span className="min-w-0">
+                    <span className="text-foreground block text-xs font-medium">
+                      {t('mcpWritesLabel')}
+                    </span>
+                    <span className="text-muted-foreground block text-xs">{t('mcpWritesHint')}</span>
+                  </span>
+                </label>
               </div>
             </div>
 

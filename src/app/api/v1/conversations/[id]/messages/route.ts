@@ -6,8 +6,8 @@
 // any message is returned — a foreign or unknown id → 404.
 // ============================================================
 
-import { requireApiKey } from '@/lib/auth/api-context';
-import { okList, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { apiRoute } from '@/lib/auth/api-context';
+import { okList, fail } from '@/lib/api/v1/respond';
 import {
   parseListParams,
   keysetFilter,
@@ -16,28 +16,15 @@ import {
 import { serializeMessage } from '@/lib/api/v1/conversations';
 import type { Message } from '@/types';
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const ctx = await requireApiKey(request, 'messages:read');
-    const { id } = await params;
+export const GET = apiRoute<{ id: string }>('messages:read', async (ctx, request, { id }) => {
     const { limit, cursor } = parseListParams(request);
 
-    // Gate on account ownership of the conversation first.
-    const { data: conv } = await ctx.supabase
-      .from('conversations')
-      .select('id')
-      .eq('id', id)
-      .eq('account_id', ctx.accountId)
-      .maybeSingle();
-    if (!conv) return fail('not_found', 'Conversation not found', 404);
+    // `child` proves the conversation is this account's (404 otherwise)
+    // and pins every query to it.
+    const messages = await ctx.db.child('messages', id, 'Conversation');
 
-    let query = ctx.supabase
-      .from('messages')
+    let query = messages
       .select('*')
-      .eq('conversation_id', id)
       .order('created_at', { ascending: false })
       .order('id', { ascending: false })
       .limit(limit + 1);
@@ -59,7 +46,4 @@ export async function GET(
       items.map((m) => serializeMessage(m as unknown as Message)),
       nextCursor
     );
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
-}
+});

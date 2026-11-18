@@ -8,7 +8,7 @@
 // same shared send core.
 //
 // Auth: API key with the `messages:send` scope. Account context (and
-// the service-role client) come from `requireApiKey`.
+// the account-scoped db) come from `apiRoute`.
 //
 // Body:
 //   {
@@ -31,19 +31,16 @@
 //               "contact_id", "contact_created" } }
 // ============================================================
 
-import { requireApiKey } from '@/lib/auth/api-context';
-import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { apiRoute } from '@/lib/auth/api-context';
+import { ok, fail } from '@/lib/api/v1/respond';
 import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation';
 import {
   sendMessageToConversation,
   validateSendMessageParams,
-  SendMessageError,
 } from '@/lib/whatsapp/send-message';
 import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive';
 
-export async function POST(request: Request) {
-  try {
-    const ctx = await requireApiKey(request, 'messages:send');
+export const POST = apiRoute('messages:send', async (ctx, request) => {
 
     const body = (await request.json().catch(() => null)) as Record<
       string,
@@ -98,15 +95,16 @@ export async function POST(request: Request) {
     // Find-or-create the conversation for this phone, then send. Both
     // steps share `SendMessageError`, so one catch maps the whole
     // pipeline to the envelope.
+    // Vetted cores: both take accountId and scope by it.
     const resolved = await resolveConversationByPhone(
-      ctx.supabase,
+      ctx.db.trusted,
       ctx.accountId,
       to,
       typeof body.name === 'string' ? body.name : null
     );
 
     const result = await sendMessageToConversation(
-      ctx.supabase,
+      ctx.db.trusted,
       ctx.accountId,
       {
         conversationId: resolved.conversationId,
@@ -137,10 +135,4 @@ export async function POST(request: Request) {
       },
       201
     );
-  } catch (err) {
-    if (err instanceof SendMessageError) {
-      return fail(err.code, err.message, err.status);
-    }
-    return toApiErrorResponse(err);
-  }
-}
+});

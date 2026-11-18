@@ -8,37 +8,25 @@
 // array of tag names) to replace the contact's tags.
 // ============================================================
 
-import { requireApiKey } from '@/lib/auth/api-context';
-import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { apiRoute } from '@/lib/auth/api-context';
+import { ok, fail } from '@/lib/api/v1/respond';
+import { isUuid } from '@/lib/api/core/db';
 import {
   getContactById,
   setContactTags,
   resolveAuditUserId,
-  ContactError,
 } from '@/lib/api/v1/contacts';
 
-export async function GET(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const ctx = await requireApiKey(request, 'contacts:read');
-    const { id } = await params;
-    const contact = await getContactById(ctx.supabase, ctx.accountId, id);
-    if (!contact) return fail('not_found', 'Contact not found', 404);
-    return ok(contact);
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
-}
+export const GET = apiRoute<{ id: string }>('contacts:read', async (ctx, _request, { id }) => {
+  if (!isUuid(id)) return fail('not_found', 'Contact not found', 404);
+  // Vetted core helper: scopes by accountId itself.
+  const contact = await getContactById(ctx.db.trusted, ctx.accountId, id);
+  if (!contact) return fail('not_found', 'Contact not found', 404);
+  return ok(contact);
+});
 
-export async function PATCH(
-  request: Request,
-  { params }: { params: Promise<{ id: string }> }
-) {
-  try {
-    const ctx = await requireApiKey(request, 'contacts:write');
-    const { id } = await params;
+export const PATCH = apiRoute<{ id: string }>('contacts:write', async (ctx, request, { id }) => {
+    if (!isUuid(id)) return fail('not_found', 'Contact not found', 404);
 
     const body = (await request.json().catch(() => null)) as Record<
       string,
@@ -49,7 +37,7 @@ export async function PATCH(
     }
 
     // Verify the contact is in this account before mutating anything.
-    const existing = await getContactById(ctx.supabase, ctx.accountId, id);
+    const existing = await getContactById(ctx.db.trusted, ctx.accountId, id);
     if (!existing) return fail('not_found', 'Contact not found', 404);
 
     // Build a partial update from the provided scalar fields. A field
@@ -69,11 +57,7 @@ export async function PATCH(
 
     if (Object.keys(updates).length > 0) {
       updates.updated_at = new Date().toISOString();
-      const { error } = await ctx.supabase
-        .from('contacts')
-        .update(updates)
-        .eq('id', id)
-        .eq('account_id', ctx.accountId);
+      const { error } = await ctx.db.from('contacts').update(updates).eq('id', id);
       if (error) {
         console.error('[api/v1/contacts] update error:', error);
         return fail('internal', 'Failed to update contact', 500);
@@ -81,9 +65,9 @@ export async function PATCH(
     }
 
     if (Array.isArray(body.tags)) {
-      const auditUserId = await resolveAuditUserId(ctx.supabase, ctx.accountId);
+      const auditUserId = await resolveAuditUserId(ctx.db.trusted, ctx.accountId);
       await setContactTags(
-        ctx.supabase,
+        ctx.db.trusted,
         ctx.accountId,
         auditUserId,
         id,
@@ -91,12 +75,6 @@ export async function PATCH(
       );
     }
 
-    const contact = await getContactById(ctx.supabase, ctx.accountId, id);
+    const contact = await getContactById(ctx.db.trusted, ctx.accountId, id);
     return ok(contact);
-  } catch (err) {
-    if (err instanceof ContactError) {
-      return fail(err.status === 400 ? 'bad_request' : 'internal', err.message, err.status);
-    }
-    return toApiErrorResponse(err);
-  }
-}
+});

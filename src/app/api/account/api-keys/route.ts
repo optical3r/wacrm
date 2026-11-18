@@ -43,7 +43,7 @@ const MAX_EXPIRY_DAYS = 365;
 // Columns safe to expose. `key_hash` is deliberately excluded — it
 // never leaves the server.
 const SAFE_COLUMNS =
-  'id, name, key_prefix, scopes, last_used_at, expires_at, revoked_at, created_at';
+  'id, name, key_prefix, scopes, mcp_enabled, mcp_allow_writes, last_used_at, expires_at, revoked_at, created_at';
 
 export async function GET() {
   try {
@@ -85,6 +85,8 @@ export async function POST(request: Request) {
       name?: unknown;
       scopes?: unknown;
       expiresInDays?: unknown;
+      mcpEnabled?: unknown;
+      mcpAllowWrites?: unknown;
     } | null;
 
     const rawName = typeof body?.name === 'string' ? body.name.trim() : '';
@@ -136,6 +138,9 @@ export async function POST(request: Request) {
         key_hash: hash,
         scopes,
         expires_at: expiresAt,
+        // MCP: on by default, read-only unless writes are asked for.
+        mcp_enabled: body?.mcpEnabled !== false,
+        mcp_allow_writes: body?.mcpAllowWrites === true,
       })
       .select(SAFE_COLUMNS)
       .single();

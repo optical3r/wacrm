@@ -1,118 +1,244 @@
 // ============================================================
-// Public API authentication — resolve a request's API key into an
+// Public API authentication — resolve a request's credential into an
 // account context.
 //
-// This is the machine-to-machine counterpart of `getCurrentAccount`
-// (cookie session → account). Where the dashboard authenticates a
-// human via Supabase cookies, the public API authenticates a caller
-// via `Authorization: Bearer wacrm_live_…`.
+// The machine-to-machine counterpart of `getCurrentAccount`. A caller
+// presents `Authorization: Bearer <key>`; the key (looked up by its
+// hash) fixes the account, and nothing in the request can change it.
 //
-// Calling convention — every `/api/v1` route does:
+// Every /api/v1 route is wrapped in `apiRoute(scope, handler)`:
 //
-//   try {
-//     const ctx = await requireApiKey(request, "messages:send");
-//     // ctx.supabase   — service-role client (no user session exists)
-//     // ctx.accountId  — the key's account; scope every query by it
-//     // ctx.scopes     — granted scopes
-//     // ctx.keyId      — for logging / the rate-limit bucket
-//   } catch (err) {
-//     return toApiErrorResponse(err);   // maps ApiError → envelope
-//   }
+//   export const GET = apiRoute('contacts:read', async (ctx, request) => {
+//     const { data } = await ctx.db.from('contacts').select('*');
+//     ...
+//   });
 //
-// Why a service-role client: an API caller has no Supabase session,
-// so there's no `auth.uid()` for RLS to match. The key lookup itself
-// establishes the account; from there every downstream query MUST be
-// explicitly filtered by `ctx.accountId` (the same discipline the
-// dashboard's send route already follows). The key never escalates
-// past its own account because the account is fixed at lookup time.
+// `ctx.db` is the account-scoped database (src/lib/api/core/db.ts):
+// the only way an API route or MCP tool reaches data. The wrapper also
+// enforces the account's API switch and status, the shared per-minute
+// limit, and writes one api_request_log row per call.
 // ============================================================
-
-import type { SupabaseClient } from '@supabase/supabase-js';
 
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { findActiveKeyByHash, touchLastUsed } from '@/lib/api-keys/store';
 import { hashApiKey, looksLikeApiKey } from '@/lib/api-keys/keys';
 import { hasScope, type ApiScope } from '@/lib/api-keys/scopes';
-import { forbidden, rateLimited, unauthorized } from '@/lib/api/v1/respond';
-import { checkRateLimit, RATE_LIMITS } from '@/lib/rate-limit';
+import {
+  ApiError,
+  forbidden,
+  rateLimited,
+  toApiErrorResponse,
+  unauthorized,
+} from '@/lib/api/v1/respond';
+import { checkRateLimit, type RateLimitResult } from '@/lib/rate-limit';
+import { createAccountDb, type AccountDb } from '@/lib/api/core/db';
 
-export interface ApiKeyContext {
-  /** Discriminant — lets shared logic tell key auth from cookie auth. */
-  authType: 'api_key';
-  /** Service-role Supabase client. RLS-bypassing; scope by accountId. */
-  supabase: SupabaseClient;
-  /** The account this key belongs to. */
+export type ApiPlan = 'starter' | 'pro';
+
+export interface ApiContext {
+  /** How the caller authenticated. OAuth arrives with the claude.ai connector. */
+  authType: 'api_key' | 'oauth';
+  /** Account-scoped data access. The only door to the database. */
+  db: AccountDb;
+  /** The workspace (account) this credential belongs to. */
   accountId: string;
-  /** The key row id — for audit logging and the rate-limit bucket. */
-  keyId: string;
-  /** Scopes granted to this key. */
+  /** api_keys row id (null for an OAuth token). */
+  keyId: string | null;
+  /** Scopes granted to this credential. */
   scopes: string[];
   /** Who minted the key (null if that user was later removed). */
   createdBy: string | null;
+  /** The workspace's plan: some actions exist on only one of them. */
+  plan: ApiPlan;
+  /** MCP switches of this credential. */
+  mcp: { enabled: boolean; allowWrites: boolean };
 }
 
-/**
- * Extract the bearer token from the `Authorization` header.
- * Tolerates the `Bearer ` prefix being absent (some clients send the
- * bare key) but requires the value to look like one of our keys.
- */
+/** Per-minute budget when the super admin set none for the account. */
+export const PLAN_RATE_LIMITS: Record<ApiPlan, number> = { starter: 60, pro: 120 };
+
 function extractKey(request: Request): string | null {
   const header = request.headers.get('authorization');
   if (!header) return null;
-  const value = header.startsWith('Bearer ')
-    ? header.slice('Bearer '.length).trim()
-    : header.trim();
+  const value = header.startsWith('Bearer ') ? header.slice('Bearer '.length).trim() : header.trim();
   return value.length > 0 ? value : null;
 }
 
-/**
- * Authenticate a public-API request and (optionally) enforce a
- * single scope. Throws an `ApiError` (mapped to the envelope by
- * `toApiErrorResponse`) on any failure:
- *
- *   401 unauthorized — no key, malformed, unknown, revoked, expired
- *   403 forbidden    — valid key without the required scope
- *   429 rate_limited — per-key budget exhausted
- *
- * On success, bumps `last_used_at` (fire-and-forget) and returns the
- * account context.
- */
-export async function requireApiKey(
-  request: Request,
-  scope?: ApiScope
-): Promise<ApiKeyContext> {
-  const presented = extractKey(request);
-  if (!presented || !looksLikeApiKey(presented)) {
+interface AccountGate {
+  plan: ApiPlan;
+  limit: number;
+}
+
+async function loadAccountGate(accountId: string): Promise<AccountGate> {
+  const { data, error } = await supabaseAdmin()
+    .from('accounts')
+    .select('plan, status, api_enabled, api_rate_limit')
+    .eq('id', accountId)
+    .maybeSingle();
+  if (error || !data) {
+    if (error) console.error('[api] account lookup failed:', error.message);
     throw unauthorized();
   }
+  if (data.status && data.status !== 'active') {
+    throw forbidden('Esta conta não está ativa');
+  }
+  if (data.api_enabled === false) {
+    throw forbidden('A API está desligada para esta conta');
+  }
+  const plan: ApiPlan = data.plan === 'starter' ? 'starter' : 'pro';
+  const limit = typeof data.api_rate_limit === 'number' ? data.api_rate_limit : PLAN_RATE_LIMITS[plan];
+  return { plan, limit };
+}
+
+/**
+ * Count one call against the credential's per-minute budget. Uses the
+ * shared counter in Postgres (migration 062) so every server instance
+ * sees the same total; falls back to the per-instance counter when the
+ * database call fails, rather than failing the request.
+ */
+async function hitRateLimit(bucket: string, limit: number): Promise<RateLimitResult> {
+  const { data, error } = await supabaseAdmin().rpc('api_rate_hit', {
+    p_bucket: bucket,
+    p_limit: limit,
+    p_window_seconds: 60,
+  });
+  const row = Array.isArray(data) ? data[0] : data;
+  if (error || !row) {
+    if (error) console.warn('[api] shared rate limit unavailable:', error.message);
+    return checkRateLimit(bucket, { limit, windowMs: 60_000 });
+  }
+  return {
+    success: Boolean(row.allowed),
+    remaining: Number(row.remaining ?? 0),
+    reset: new Date(row.reset_at as string).getTime(),
+    limit,
+  };
+}
+
+/**
+ * Authenticate the request. Throws `ApiError` (401 / 403 / 429).
+ */
+export async function authenticateApi(request: Request): Promise<ApiContext> {
+  const presented = extractKey(request);
+  if (!presented || !looksLikeApiKey(presented)) throw unauthorized();
 
   const row = await findActiveKeyByHash(hashApiKey(presented));
-  if (!row) {
-    // Covers unknown, revoked, and expired keys alike — we don't
-    // distinguish them on the wire so a probe can't learn whether a
-    // key ever existed.
-    throw unauthorized();
-  }
+  if (!row) throw unauthorized();
 
-  // Rate-limit per key, before the scope check, so an unauthorized-
-  // scope caller still can't hammer the endpoint for free.
-  const limit = checkRateLimit(`apikey:${row.id}`, RATE_LIMITS.publicApi);
-  if (!limit.success) {
-    throw rateLimited(limit);
-  }
+  const gate = await loadAccountGate(row.account_id);
 
-  if (scope && !hasScope(row.scopes, scope)) {
-    throw forbidden(`This API key is missing the '${scope}' scope`);
-  }
+  const limit = await hitRateLimit(`apikey:${row.id}`, gate.limit);
+  if (!limit.success) throw rateLimited(limit);
 
   touchLastUsed(row.id);
 
   return {
     authType: 'api_key',
-    supabase: supabaseAdmin(),
+    db: createAccountDb(supabaseAdmin(), row.account_id),
     accountId: row.account_id,
     keyId: row.id,
     scopes: row.scopes,
     createdBy: row.created_by,
+    plan: gate.plan,
+    mcp: { enabled: row.mcp_enabled !== false, allowWrites: row.mcp_allow_writes === true },
   };
+}
+
+/** Throws 403 unless the credential carries `scope`. */
+export function requireScope(ctx: ApiContext, scope: ApiScope): void {
+  if (!hasScope(ctx.scopes, scope)) {
+    throw forbidden(`Esta chave não tem a permissão '${scope}'`);
+  }
+}
+
+/** Throws 403 when the action does not exist on the workspace's plan. */
+export function requirePlan(ctx: ApiContext, plan: ApiPlan, what: string): void {
+  if (ctx.plan !== plan) {
+    throw new ApiError(
+      'forbidden',
+      `${what} ${plan === 'pro' ? 'é do plano Pro' : 'é do plano Starter'}`,
+      403
+    );
+  }
+}
+
+/** Best-effort audit row; never fails the request. */
+export function logApiRequest(entry: {
+  accountId: string;
+  keyId: string | null;
+  via: 'api' | 'mcp';
+  method: string;
+  route: string;
+  status: number;
+  durationMs: number;
+}): void {
+  void supabaseAdmin()
+    .from('api_request_log')
+    .insert({
+      account_id: entry.accountId,
+      key_id: entry.keyId,
+      via: entry.via,
+      method: entry.method,
+      route: entry.route.slice(0, 200),
+      status: entry.status,
+      duration_ms: entry.durationMs,
+    })
+    .then(({ error }) => {
+      if (error) console.warn('[api] request log insert failed:', error.message);
+    });
+}
+
+type RouteParams = Record<string, string>;
+export type ApiHandler<P extends RouteParams = RouteParams> = (
+  ctx: ApiContext,
+  request: Request,
+  params: P
+) => Promise<Response>;
+
+/** A wrapped v1 route: a Next handler that also exposes its parts. */
+export interface ApiRouteHandler<P extends RouteParams = RouteParams> {
+  (request: Request, route?: { params?: Promise<P> }): Promise<Response>;
+  /** Scope the route requires (null = any valid credential). */
+  readonly scope: ApiScope | null;
+  /**
+   * The handler body for an already-authenticated context. The MCP
+   * calls this so a tool and its endpoint run exactly the same code.
+   */
+  readonly run: ApiHandler<P>;
+}
+
+/**
+ * Wrap a v1 route: authenticate, check `scope` (omit for scope-free
+ * routes such as /me), run, map errors to the envelope, log the call.
+ */
+export function apiRoute<P extends RouteParams = RouteParams>(
+  scope: ApiScope | null,
+  handler: ApiHandler<P>
+): ApiRouteHandler<P> {
+  const wrapped = async (request: Request, route?: { params?: Promise<P> }): Promise<Response> => {
+    const started = Date.now();
+    let ctx: ApiContext | null = null;
+    let response: Response;
+    try {
+      ctx = await authenticateApi(request);
+      if (scope) requireScope(ctx, scope);
+      const params = ((await route?.params) ?? {}) as P;
+      response = await handler(ctx, request, params);
+    } catch (err) {
+      response = toApiErrorResponse(err);
+    }
+    if (ctx) {
+      logApiRequest({
+        accountId: ctx.accountId,
+        keyId: ctx.keyId,
+        via: 'api',
+        method: request.method,
+        route: new URL(request.url).pathname,
+        status: response.status,
+        durationMs: Date.now() - started,
+      });
+    }
+    return response;
+  };
+  return Object.assign(wrapped, { scope, run: handler });
 }

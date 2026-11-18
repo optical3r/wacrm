@@ -8,8 +8,8 @@
 // `created: false`; a new row returns 201 with `created: true`.
 // ============================================================
 
-import { requireApiKey } from '@/lib/auth/api-context';
-import { ok, okList, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
+import { apiRoute } from '@/lib/auth/api-context';
+import { ok, okList, fail } from '@/lib/api/v1/respond';
 import {
   parseListParams,
   keysetFilter,
@@ -22,7 +22,6 @@ import {
   setContactTags,
   getContactById,
   resolveAuditUserId,
-  ContactError,
 } from '@/lib/api/v1/contacts';
 
 // PostgREST filter values are comma/paren-delimited; strip anything
@@ -32,9 +31,7 @@ function sanitizeSearch(raw: string): string {
   return raw.replace(/[^\p{L}\p{N} +@.\-_]/gu, '').trim();
 }
 
-export async function GET(request: Request) {
-  try {
-    const ctx = await requireApiKey(request, 'contacts:read');
+export const GET = apiRoute('contacts:read', async (ctx, request) => {
     const { limit, cursor } = parseListParams(request);
     const url = new URL(request.url);
     const search = sanitizeSearch(url.searchParams.get('search') ?? '');
@@ -50,11 +47,7 @@ export async function GET(request: Request) {
       ? `${CONTACT_SELECT}, tag_filter:contact_tags!inner(tag_id)`
       : CONTACT_SELECT;
 
-    let query = ctx.supabase
-      .from('contacts')
-      .select(selectClause)
-      .eq('account_id', ctx.accountId)
-      .eq('is_group', false);
+    let query = ctx.db.from('contacts').select(selectClause).eq('is_group', false);
 
     if (search) {
       query = query.or(`name.ilike.*${search}*,phone.ilike.*${search}*`);
@@ -89,14 +82,9 @@ export async function GET(request: Request) {
       items.map((r) => serializeContact(r as Record<string, unknown>)),
       nextCursor
     );
-  } catch (err) {
-    return toApiErrorResponse(err);
-  }
-}
+});
 
-export async function POST(request: Request) {
-  try {
-    const ctx = await requireApiKey(request, 'contacts:write');
+export const POST = apiRoute('contacts:write', async (ctx, request) => {
 
     const body = (await request.json().catch(() => null)) as Record<
       string,
@@ -111,10 +99,11 @@ export async function POST(request: Request) {
       return fail('bad_request', "'phone' is required", 400);
     }
 
-    const auditUserId = await resolveAuditUserId(ctx.supabase, ctx.accountId);
+    // Vetted core helpers: each takes accountId and scopes by it.
+    const auditUserId = await resolveAuditUserId(ctx.db.trusted, ctx.accountId);
 
     const { id, created } = await findOrCreateContact(
-      ctx.supabase,
+      ctx.db.trusted,
       ctx.accountId,
       auditUserId,
       {
@@ -127,7 +116,7 @@ export async function POST(request: Request) {
 
     if (Array.isArray(body.tags)) {
       await setContactTags(
-        ctx.supabase,
+        ctx.db.trusted,
         ctx.accountId,
         auditUserId,
         id,
@@ -135,16 +124,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const contact = await getContactById(ctx.supabase, ctx.accountId, id);
+    const contact = await getContactById(ctx.db.trusted, ctx.accountId, id);
     return ok(contact, created ? 201 : 200);
-  } catch (err) {
-    if (err instanceof ContactError) {
-      return fail(
-        err.status === 400 ? 'bad_request' : 'internal',
-        err.message,
-        err.status
-      );
-    }
-    return toApiErrorResponse(err);
-  }
-}
+});

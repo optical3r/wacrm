@@ -1,4 +1,5 @@
 // ============================================================
+// PATCH  /api/account/api-keys/[id] — change the key's MCP switches.
 // DELETE /api/account/api-keys/[id] — revoke a key.
 //
 // Soft revoke: sets `revoked_at` rather than deleting the row, so
@@ -23,6 +24,64 @@ import {
 import { getT } from '@/lib/i18n/translate';
 
 const t = getT('Api');
+
+export async function PATCH(
+  request: Request,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  try {
+    const ctx = await requireRole('admin');
+
+    const limit = checkRateLimit(
+      `admin:apiKeyUpdate:${ctx.userId}`,
+      RATE_LIMITS.adminAction
+    );
+    if (!limit.success) return rateLimitResponse(limit);
+
+    const { id } = await params;
+    const body = (await request.json().catch(() => null)) as {
+      mcpEnabled?: unknown;
+      mcpAllowWrites?: unknown;
+    } | null;
+
+    const updates: Record<string, boolean> = {};
+    if (typeof body?.mcpEnabled === 'boolean') updates.mcp_enabled = body.mcpEnabled;
+    if (typeof body?.mcpAllowWrites === 'boolean') updates.mcp_allow_writes = body.mcpAllowWrites;
+    if (Object.keys(updates).length === 0) {
+      return NextResponse.json(
+        { error: t('account.apiKeys.nothingToUpdate') },
+        { status: 400 }
+      );
+    }
+
+    const { data, error } = await ctx.supabase
+      .from('api_keys')
+      .update(updates)
+      .eq('id', id)
+      .eq('account_id', ctx.accountId)
+      .is('revoked_at', null)
+      .select('id, mcp_enabled, mcp_allow_writes')
+      .maybeSingle();
+
+    if (error) {
+      console.error('[PATCH /api/account/api-keys/[id]] error:', error);
+      return NextResponse.json(
+        { error: t('account.apiKeys.updateFailed') },
+        { status: 500 }
+      );
+    }
+    if (!data) {
+      return NextResponse.json(
+        { error: t('account.apiKeys.notFoundOrRevoked') },
+        { status: 404 }
+      );
+    }
+
+    return NextResponse.json({ key: data });
+  } catch (err) {
+    return toErrorResponse(err);
+  }
+}
 
 export async function DELETE(
   _request: Request,

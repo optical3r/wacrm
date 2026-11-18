@@ -22,6 +22,9 @@ export interface ApiKeyRow {
   scopes: string[];
   expires_at: string | null;
   revoked_at: string | null;
+  /** Migration 062. */
+  mcp_enabled?: boolean;
+  mcp_allow_writes?: boolean;
 }
 
 /**
@@ -36,7 +39,7 @@ export async function findActiveKeyByHash(
 ): Promise<ApiKeyRow | null> {
   const { data, error } = await supabaseAdmin()
     .from('api_keys')
-    .select('id, account_id, created_by, name, scopes, expires_at, revoked_at')
+    .select('id, account_id, created_by, name, scopes, expires_at, revoked_at, mcp_enabled, mcp_allow_writes')
     .eq('key_hash', hash)
     .maybeSingle();
 

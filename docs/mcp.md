@@ -14,7 +14,38 @@ it's a thin wrapper over the [public API](./public-api.md), so every
 request is authenticated and scoped by your instance exactly like any
 other API call.
 
-## Quick start
+## Remote MCP (LabCRM) — no install
+
+Every LabCRM deployment also serves the MCP itself, over Streamable
+HTTP, at `/api/mcp`. One API key = one workspace: the tools only ever
+see that workspace's data.
+
+1. **Settings → API keys → New API key**. Pick the scopes, keep
+   **Use with MCP** on, and switch on **Allow writes through MCP** only
+   if the assistant should create contacts or send messages.
+2. Connect:
+
+   ```bash
+   # Claude Code
+   claude mcp add --transport http labcrm https://crm.cerqueiralabs.com.br/api/mcp \
+     --header "Authorization: Bearer <key>"
+   ```
+
+   ```toml
+   # Codex — ~/.codex/config.toml (then export LABCRM_API_KEY=<key>)
+   [mcp_servers.labcrm]
+   url = "https://crm.cerqueiralabs.com.br/api/mcp"
+   bearer_token_env_var = "LABCRM_API_KEY"
+   ```
+
+Rules: a read-only key lists only read tools; write tools need the
+key's MCP-writes switch; sending messages, broadcasts and deletes also
+need `confirmar: true` in the call. Each call is rate-limited with the
+API (Starter 60/min, Pro 120/min by default) and logged in
+`api_request_log` with `via = 'mcp'`. The claude.ai connector (OAuth)
+comes in a later phase.
+
+## Quick start (local npm package)
 
 1. Create an API key in the dashboard: **Settings → API keys**. Grant
    only the scopes your assistant needs (a read-only assistant only

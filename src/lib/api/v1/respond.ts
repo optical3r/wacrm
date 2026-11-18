@@ -125,9 +125,39 @@ export function toApiErrorResponse(err: unknown): NextResponse {
       { status: err.status, headers: err.headers }
     );
   }
+  const domain = domainError(err);
+  if (domain) {
+    return NextResponse.json(
+      { error: { code: domain.code, message: domain.message } },
+      { status: domain.status }
+    );
+  }
   console.error('[api/v1] uncategorized error:', err);
   return NextResponse.json(
     { error: { code: 'internal', message: 'Internal server error' } },
     { status: 500 }
   );
+}
+
+/**
+ * Caller-visible failures thrown by the shared cores (contacts, send,
+ * broadcast). Matched by name so this module needs no import of them.
+ */
+const DOMAIN_ERRORS = new Set(['ContactError', 'SendMessageError', 'BroadcastError']);
+
+function domainError(
+  err: unknown
+): { code: string; message: string; status: number } | null {
+  if (!(err instanceof Error) || !DOMAIN_ERRORS.has(err.name)) return null;
+  const e = err as Error & { status?: unknown; code?: unknown };
+  if (typeof e.status !== 'number') return null;
+  const code =
+    typeof e.code === 'string'
+      ? e.code
+      : e.status === 400
+        ? 'bad_request'
+        : e.status === 404
+          ? 'not_found'
+          : 'internal';
+  return { code, message: err.message, status: e.status };
 }

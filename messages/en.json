@@ -2161,7 +2161,25 @@
       "newKeyTitle": "New API key",
       "newKeyDesc": "Name it after the integration that will use it, and grant only the scopes it needs.",
       "done": "Done",
-      "networkError": "Could not reach the server"
+      "networkError": "Could not reach the server",
+      "mcpLabel": "Use with MCP (Claude, Codex)",
+      "mcpHint": "Lets this key be connected as an MCP server. Without writes, MCP is read-only.",
+      "mcpWritesLabel": "Allow writes through MCP",
+      "mcpWritesHint": "Allows creating and editing contacts, sending messages and broadcasts. Sends and deletes still ask for confirmation.",
+      "badgeMcp": "MCP: read",
+      "badgeMcpWrites": "MCP: read and write",
+      "badgeMcpOff": "MCP off",
+      "toggleMcp": "MCP",
+      "toggleMcpWrites": "MCP writes",
+      "updateSuccess": "Key updated",
+      "updateFailed": "Failed to update the key",
+      "connectTitle": "Connect to Claude or Codex",
+      "connectDesc": "Use a key with MCP on as a remote MCP server. Address: {url}",
+      "claudeCodeLabel": "Claude Code (terminal)",
+      "codexLabel": "Codex (~/.codex/config.toml file)",
+      "codexEnvHint": "Then set the LABCRM_API_KEY variable to the key.",
+      "snippetCopied": "Copied",
+      "yourKeyPlaceholder": "YOUR_KEY"
     },
     "deals": {
       "title": "Deals & currency",
@@ -2927,7 +2945,9 @@
         "nameRequired": "'name' is required",
         "nameTooLong": "Name must be {max} characters or fewer",
         "scopesInvalid": "'scopes' must be an array of known scope strings",
-        "createFailed": "Failed to create API key"
+        "createFailed": "Failed to create API key",
+        "nothingToUpdate": "Nothing to update",
+        "updateFailed": "Failed to update the key"
       },
       "invitations": {
         "revokeFailed": "Failed to revoke invitation",

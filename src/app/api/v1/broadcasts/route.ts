@@ -24,7 +24,7 @@
 
 import { after } from 'next/server';
 
-import { requireApiKey } from '@/lib/auth/api-context';
+import { apiRoute } from '@/lib/auth/api-context';
 
 // The `after()` fan-out below sends to every recipient sequentially and
 // runs within this route's max duration (the same constraint the
@@ -35,17 +35,11 @@ import { requireApiKey } from '@/lib/auth/api-context';
 // still exceed 60s, so very large sends should be split across
 // requests. A durable queue/cron drain is the complete fix (follow-up).
 export const maxDuration = 60;
-import { ok, fail, toApiErrorResponse } from '@/lib/api/v1/respond';
-import { resolveAuditUserId, ContactError } from '@/lib/api/v1/contacts';
-import {
-  createBroadcast,
-  deliverBroadcast,
-  BroadcastError,
-} from '@/lib/whatsapp/broadcast-core';
+import { ok, fail } from '@/lib/api/v1/respond';
+import { resolveAuditUserId } from '@/lib/api/v1/contacts';
+import { createBroadcast, deliverBroadcast } from '@/lib/whatsapp/broadcast-core';
 
-export async function POST(request: Request) {
-  try {
-    const ctx = await requireApiKey(request, 'broadcasts:send');
+export const POST = apiRoute('broadcasts:send', async (ctx, request) => {
 
     const body = (await request.json().catch(() => null)) as Record<
       string,
@@ -59,9 +53,10 @@ export async function POST(request: Request) {
       typeof body.template_name === 'string' ? body.template_name : '';
     const recipients = Array.isArray(body.recipients) ? body.recipients : [];
 
-    const auditUserId = await resolveAuditUserId(ctx.supabase, ctx.accountId);
+    // Vetted cores: each takes accountId and scopes by it.
+    const auditUserId = await resolveAuditUserId(ctx.db.trusted, ctx.accountId);
 
-    const plan = await createBroadcast(ctx.supabase, ctx.accountId, auditUserId, {
+    const plan = await createBroadcast(ctx.db.trusted, ctx.accountId, auditUserId, {
       name: typeof body.name === 'string' ? body.name : null,
       templateName,
       templateLanguage:
@@ -77,7 +72,7 @@ export async function POST(request: Request) {
     // Fan out after the response is sent. Uses the same service-role
     // client — no request-scoped auth needed for the Meta calls or
     // the account-scoped row updates.
-    after(() => deliverBroadcast(ctx.supabase, plan));
+    after(() => deliverBroadcast(ctx.db.trusted, plan));
 
     return ok(
       {
@@ -89,17 +84,4 @@ export async function POST(request: Request) {
       },
       202
     );
-  } catch (err) {
-    if (err instanceof BroadcastError) {
-      return fail(err.code, err.message, err.status);
-    }
-    if (err instanceof ContactError) {
-      return fail(
-        err.status === 400 ? 'bad_request' : 'internal',
-        err.message,
-        err.status
-      );
-    }
-    return toApiErrorResponse(err);
-  }
-}
+});

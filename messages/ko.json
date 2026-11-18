@@ -2161,7 +2161,25 @@
       "newKeyTitle": "새 API 키",
       "newKeyDesc": "이 키를 사용할 연동 서비스의 이름을 붙이고, 필요한 권한 범위만 부여하세요.",
       "done": "완료",
-      "networkError": "서버에 연결할 수 없습니다"
+      "networkError": "서버에 연결할 수 없습니다",
+      "mcpLabel": "MCP에서 사용 (Claude, Codex)",
+      "mcpHint": "이 키를 MCP 서버로 연결할 수 있습니다. 쓰기 권한이 없으면 읽기 전용입니다.",
+      "mcpWritesLabel": "MCP 쓰기 허용",
+      "mcpWritesHint": "연락처 생성·수정, 메시지 및 브로드캐스트 전송을 허용합니다. 전송과 삭제는 여전히 확인이 필요합니다.",
+      "badgeMcp": "MCP: 읽기",
+      "badgeMcpWrites": "MCP: 읽기 및 쓰기",
+      "badgeMcpOff": "MCP 꺼짐",
+      "toggleMcp": "MCP",
+      "toggleMcpWrites": "MCP 쓰기",
+      "updateSuccess": "키가 업데이트되었습니다",
+      "updateFailed": "키 업데이트 실패",
+      "connectTitle": "Claude 또는 Codex에 연결",
+      "connectDesc": "MCP가 켜진 키를 원격 MCP 서버로 사용하세요. 주소: {url}",
+      "claudeCodeLabel": "Claude Code (터미널)",
+      "codexLabel": "Codex (~/.codex/config.toml 파일)",
+      "codexEnvHint": "그런 다음 LABCRM_API_KEY 변수에 키를 설정하세요.",
+      "snippetCopied": "복사됨",
+      "yourKeyPlaceholder": "API_KEY"
     },
     "deals": {
       "title": "딜 & 통화",
@@ -2927,7 +2945,9 @@
         "nameRequired": "이름은 필수입니다",
         "nameTooLong": "이름은 {max}자 이하여야 합니다",
         "scopesInvalid": "권한 범위는 알려진 범위 문자열의 배열이어야 합니다",
-        "createFailed": "API 키를 생성하지 못했습니다"
+        "createFailed": "API 키를 생성하지 못했습니다",
+        "nothingToUpdate": "업데이트할 항목이 없습니다",
+        "updateFailed": "키 업데이트 실패"
       },
       "invitations": {
         "revokeFailed": "초대를 취소하지 못했습니다",
