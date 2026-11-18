@@ -98,7 +98,7 @@ function req(path: string, init: { method?: string; body?: unknown } = {}) {
     body: init.body === undefined ? undefined : JSON.stringify(init.body),
   });
 }
-const p = (v: Record<string, string>) => ({ params: Promise.resolve(v) });
+const p = <T extends Record<string, string>>(v: T) => ({ params: Promise.resolve(v) });
 const json = async (res: Response) => (await res.json()) as { data?: any; error?: { code: string } }; // eslint-disable-line @typescript-eslint/no-explicit-any
 const row = (table: string, id: string) => fake.tables[table].find((r) => r.id === id);
 
