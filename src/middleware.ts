@@ -1,5 +1,6 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
+import { safeOAuthNext } from '@/lib/oauth/next'
 
 export async function middleware(request: NextRequest) {
   let supabaseResponse = NextResponse.next({ request })
@@ -62,6 +63,11 @@ export async function middleware(request: NextRequest) {
     ) {
       url.pathname = `/join/${encodeURIComponent(inviteToken)}`
       url.search = ''
+    } else if (request.nextUrl.pathname === '/login' && safeOAuthNext(request.nextUrl.searchParams.get('next'))) {
+      // Already signed in on the way to the OAuth consent screen.
+      const next = new URL(safeOAuthNext(request.nextUrl.searchParams.get('next'))!, request.nextUrl.origin)
+      url.pathname = next.pathname
+      url.search = next.search
     } else {
       url.pathname = '/dashboard'
       url.search = ''

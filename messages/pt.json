@@ -2179,7 +2179,21 @@
       "codexLabel": "Codex (arquivo ~/.codex/config.toml)",
       "codexEnvHint": "Depois defina a variável LABCRM_API_KEY com a chave.",
       "snippetCopied": "Copiado",
-      "yourKeyPlaceholder": "SUA_CHAVE"
+      "yourKeyPlaceholder": "SUA_CHAVE",
+      "claudeAiLabel": "No claude.ai (site e app do celular)",
+      "claudeAiHint": "Em Configurações › Conectores, adicione um conector personalizado com o endereço acima. O claude.ai pede para você entrar no LabCRM e escolher o workspace; não precisa de chave.",
+      "appsTitle": "Apps conectados",
+      "appsDesc": "Apps que entraram com login do LabCRM, como o claude.ai. Desconectar corta o acesso na hora.",
+      "appsEmpty": "Nenhum app conectado.",
+      "appsRead": "Só leitura",
+      "appsWrite": "Leitura e escrita",
+      "appsConnectedBy": "Conectado por {name} em {date}",
+      "appsConnectedOn": "Conectado em {date}",
+      "appsDisconnect": "Desconectar",
+      "appsDisconnected": "{name} foi desconectado",
+      "appsDisconnectFailed": "Não foi possível desconectar o app",
+      "appsLoadFailed": "Não foi possível carregar os apps conectados",
+      "appsNeverUsed": "nunca usado"
     },
     "deals": {
       "title": "Negócios e moeda",

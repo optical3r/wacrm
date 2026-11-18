@@ -2179,7 +2179,21 @@
       "codexLabel": "Codex (~/.codex/config.toml file)",
       "codexEnvHint": "Then set the LABCRM_API_KEY variable to the key.",
       "snippetCopied": "Copied",
-      "yourKeyPlaceholder": "YOUR_KEY"
+      "yourKeyPlaceholder": "YOUR_KEY",
+      "claudeAiLabel": "On claude.ai (web and mobile app)",
+      "claudeAiHint": "In Settings › Connectors, add a custom connector with the URL above. claude.ai asks you to sign in to LabCRM and pick the workspace; no key needed.",
+      "appsTitle": "Connected apps",
+      "appsDesc": "Apps that signed in with a LabCRM login, such as claude.ai. Disconnecting cuts access immediately.",
+      "appsEmpty": "No connected apps.",
+      "appsRead": "Read only",
+      "appsWrite": "Read and write",
+      "appsConnectedBy": "Connected by {name} on {date}",
+      "appsConnectedOn": "Connected on {date}",
+      "appsDisconnect": "Disconnect",
+      "appsDisconnected": "{name} was disconnected",
+      "appsDisconnectFailed": "Could not disconnect the app",
+      "appsLoadFailed": "Could not load connected apps",
+      "appsNeverUsed": "never used"
     },
     "deals": {
       "title": "Deals & currency",

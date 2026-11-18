@@ -43,6 +43,7 @@ import {
 } from '@/lib/api-keys/scopes';
 import { useTranslations } from 'next-intl';
 import { SettingsPanelHead } from './settings-panel-head';
+import { ConnectedApps } from './connected-apps';
 
 interface ApiKey {
   id: string;
@@ -377,8 +378,11 @@ export function ApiKeysSettings() {
           </div>
           <SnippetBlock label={t('claudeCodeLabel')} value={claudeCodeSnippet(t('yourKeyPlaceholder'))} />
           <SnippetBlock label={t('codexLabel')} value={codexSnippet()} hint={t('codexEnvHint')} />
+          <SnippetBlock label={t('claudeAiLabel')} value={mcpUrl()} hint={t('claudeAiHint')} />
         </CardContent>
       </Card>
+
+      {canEditSettings && <ConnectedApps />}
 
       <CreateKeyDialog
         open={createOpen}

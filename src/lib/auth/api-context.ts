@@ -32,6 +32,8 @@ import {
 } from '@/lib/api/v1/respond';
 import { checkRateLimit, type RateLimitResult } from '@/lib/rate-limit';
 import { createAccountDb, type AccountDb } from '@/lib/api/core/db';
+import { OAUTH_PREFIX, scopesForGrant } from '@/lib/oauth/core';
+import { findGrantByAccessToken, isWorkspaceAdmin, touchGrant } from '@/lib/oauth/store';
 
 export type ApiPlan = 'starter' | 'pro';
 
@@ -44,6 +46,8 @@ export interface ApiContext {
   accountId: string;
   /** api_keys row id (null for an OAuth token). */
   keyId: string | null;
+  /** oauth_grants row id (null for an API key). */
+  oauthGrantId: string | null;
   /** Scopes granted to this credential. */
   scopes: string[];
   /** Who minted the key (null if that user was later removed). */
@@ -96,16 +100,16 @@ async function loadAccountGate(accountId: string): Promise<AccountGate> {
  * sees the same total; falls back to the per-instance counter when the
  * database call fails, rather than failing the request.
  */
-async function hitRateLimit(bucket: string, limit: number): Promise<RateLimitResult> {
+export async function hitRateLimit(bucket: string, limit: number, windowSeconds = 60): Promise<RateLimitResult> {
   const { data, error } = await supabaseAdmin().rpc('api_rate_hit', {
     p_bucket: bucket,
     p_limit: limit,
-    p_window_seconds: 60,
+    p_window_seconds: windowSeconds,
   });
   const row = Array.isArray(data) ? data[0] : data;
   if (error || !row) {
     if (error) console.warn('[api] shared rate limit unavailable:', error.message);
-    return checkRateLimit(bucket, { limit, windowMs: 60_000 });
+    return checkRateLimit(bucket, { limit, windowMs: windowSeconds * 1000 });
   }
   return {
     success: Boolean(row.allowed),
@@ -115,12 +119,26 @@ async function hitRateLimit(bucket: string, limit: number): Promise<RateLimitRes
   };
 }
 
+export interface AuthenticateOptions {
+  /**
+   * Accept OAuth access tokens (the claude.ai connector). Only the MCP
+   * endpoint sets this: those tokens are minted for /api/mcp, so the
+   * REST API refuses them (audience binding, RFC 8707).
+   */
+  allowOAuth?: boolean;
+}
+
 /**
  * Authenticate the request. Throws `ApiError` (401 / 403 / 429).
  */
-export async function authenticateApi(request: Request): Promise<ApiContext> {
+export async function authenticateApi(request: Request, options: AuthenticateOptions = {}): Promise<ApiContext> {
   const presented = extractKey(request);
-  if (!presented || !looksLikeApiKey(presented)) throw unauthorized();
+  if (!presented) throw unauthorized();
+  if (presented.startsWith(OAUTH_PREFIX.access)) {
+    if (!options.allowOAuth) throw unauthorized();
+    return authenticateOAuth(presented);
+  }
+  if (!looksLikeApiKey(presented)) throw unauthorized();
 
   const row = await findActiveKeyByHash(hashApiKey(presented));
   if (!row) throw unauthorized();
@@ -137,10 +155,41 @@ export async function authenticateApi(request: Request): Promise<ApiContext> {
     db: createAccountDb(supabaseAdmin(), row.account_id),
     accountId: row.account_id,
     keyId: row.id,
+    oauthGrantId: null,
     scopes: row.scopes,
     createdBy: row.created_by,
     plan: gate.plan,
     mcp: { enabled: row.mcp_enabled !== false, allowWrites: row.mcp_allow_writes === true },
+  };
+}
+
+/**
+ * An OAuth access token: a person allowed an app on one workspace.
+ * It works while the connection is live and the person is still owner
+ * or admin there; losing that role cuts the app off on the next call.
+ */
+async function authenticateOAuth(token: string): Promise<ApiContext> {
+  const admin = supabaseAdmin();
+  const grant = await findGrantByAccessToken(admin, token);
+  if (!grant) throw unauthorized();
+  if (!(await isWorkspaceAdmin(admin, grant.account_id, grant.user_id))) throw unauthorized();
+
+  const gate = await loadAccountGate(grant.account_id);
+  const limit = await hitRateLimit(`oauth:${grant.id}`, gate.limit);
+  if (!limit.success) throw rateLimited(limit);
+
+  touchGrant(admin, grant.id);
+
+  return {
+    authType: 'oauth',
+    db: createAccountDb(admin, grant.account_id),
+    accountId: grant.account_id,
+    keyId: null,
+    oauthGrantId: grant.id,
+    scopes: scopesForGrant(grant.allow_writes),
+    createdBy: grant.user_id,
+    plan: gate.plan,
+    mcp: { enabled: true, allowWrites: grant.allow_writes },
   };
 }
 
@@ -166,6 +215,7 @@ export function requirePlan(ctx: ApiContext, plan: ApiPlan, what: string): void 
 export function logApiRequest(entry: {
   accountId: string;
   keyId: string | null;
+  oauthGrantId?: string | null;
   via: 'api' | 'mcp';
   method: string;
   route: string;
@@ -177,6 +227,7 @@ export function logApiRequest(entry: {
     .insert({
       account_id: entry.accountId,
       key_id: entry.keyId,
+      ...(entry.oauthGrantId ? { oauth_grant_id: entry.oauthGrantId } : {}),
       via: entry.via,
       method: entry.method,
       route: entry.route.slice(0, 200),

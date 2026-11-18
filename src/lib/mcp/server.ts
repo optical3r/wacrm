@@ -83,6 +83,7 @@ export async function runTool(
     logApiRequest({
       accountId: ctx.accountId,
       keyId: ctx.keyId,
+      oauthGrantId: ctx.oauthGrantId,
       via: 'mcp',
       method: 'TOOL',
       route: `mcp:${tool.name}`,

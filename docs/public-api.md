@@ -36,6 +36,12 @@ In the dashboard: **Settings → API keys → New API key**. Only
 **Settings → API keys → Revoke.** Revocation is effective on the
 key's next request. Revoked keys stay in the list as an audit trail.
 
+### OAuth tokens (claude.ai)
+
+The claude.ai connector logs in with OAuth instead of a key (see
+`docs/mcp.md`). Those tokens (`lcoa_…`) are issued for the MCP only:
+`/api/v1` answers them with 401.
+
 ## Scopes
 
 A key can do only what its scopes allow — independent of who created

@@ -2179,7 +2179,21 @@
       "codexLabel": "Codex (~/.codex/config.toml 파일)",
       "codexEnvHint": "그런 다음 LABCRM_API_KEY 변수에 키를 설정하세요.",
       "snippetCopied": "복사됨",
-      "yourKeyPlaceholder": "API_KEY"
+      "yourKeyPlaceholder": "API_KEY",
+      "claudeAiLabel": "claude.ai (웹 및 모바일 앱)",
+      "claudeAiHint": "설정 › 커넥터에서 위 주소로 사용자 지정 커넥터를 추가하세요. claude.ai가 LabCRM 로그인과 워크스페이스 선택을 요청하며, 키는 필요 없습니다.",
+      "appsTitle": "연결된 앱",
+      "appsDesc": "claude.ai처럼 LabCRM 로그인으로 들어온 앱입니다. 연결을 해제하면 즉시 접근이 차단됩니다.",
+      "appsEmpty": "연결된 앱이 없습니다.",
+      "appsRead": "읽기 전용",
+      "appsWrite": "읽기 및 쓰기",
+      "appsConnectedBy": "{name} 님이 {date}에 연결",
+      "appsConnectedOn": "{date}에 연결",
+      "appsDisconnect": "연결 해제",
+      "appsDisconnected": "{name} 연결이 해제되었습니다",
+      "appsDisconnectFailed": "앱 연결을 해제하지 못했습니다",
+      "appsLoadFailed": "연결된 앱을 불러오지 못했습니다",
+      "appsNeverUsed": "사용 기록 없음"
     },
     "deals": {
       "title": "딜 & 통화",
