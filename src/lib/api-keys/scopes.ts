@@ -27,7 +27,16 @@ export const API_SCOPES = [
   'notes:write',
   'conversations:read',
   'conversations:write',
+  'deals:read',
+  'deals:write',
+  'quick_replies:read',
+  'quick_replies:write',
+  'templates:read',
+  'templates:write',
+  'broadcasts:read',
   'broadcasts:send',
+  'team:read',
+  'channels:read',
   'webhooks:manage',
 ] as const;
 
@@ -48,7 +57,16 @@ export const SCOPE_DESCRIPTIONS: Record<ApiScope, string> = {
   'notes:write': 'Criar, editar e apagar notas',
   'conversations:read': 'Listar e ler conversas',
   'conversations:write': 'Iniciar conversas, mudar status e donos, marcar como lida',
-  'broadcasts:send': 'Criar disparos e ver o andamento',
+  'deals:read': 'Ler funis, etapas e negócios',
+  'deals:write': 'Criar, mover, editar e apagar negócios e funis',
+  'quick_replies:read': 'Listar respostas rápidas',
+  'quick_replies:write': 'Criar, editar e apagar respostas rápidas',
+  'templates:read': 'Ler modelos de mensagem (plano Pro)',
+  'templates:write': 'Criar, enviar para aprovação e apagar modelos (plano Pro)',
+  'broadcasts:read': 'Ver disparos, o andamento e os destinatários',
+  'broadcasts:send': 'Criar e cancelar disparos (inclui ver o andamento)',
+  'team:read': 'Ver a equipe e o rodízio de leads',
+  'channels:read': 'Ver os números conectados e quem atende cada um',
   'webhooks:manage': 'Cadastrar e gerenciar webhooks de eventos',
 };
 
@@ -87,5 +105,15 @@ export function hasScope(
   granted: readonly string[],
   required: ApiScope
 ): boolean {
-  return granted.includes(required);
+  if (granted.includes(required)) return true;
+  return granted.some((g) => SCOPE_IMPLIES[g as ApiScope]?.includes(required));
 }
+
+/**
+ * Scopes that carry others with them. `broadcasts:send` predates
+ * `broadcasts:read` and always let a key watch its own broadcasts, so
+ * keys minted before the split keep doing that.
+ */
+const SCOPE_IMPLIES: Partial<Record<ApiScope, readonly ApiScope[]>> = {
+  'broadcasts:send': ['broadcasts:read'],
+};

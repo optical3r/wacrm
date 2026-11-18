@@ -148,6 +148,7 @@ const DOMAIN_ERRORS = new Set([
   'SendMessageError',
   'BroadcastError',
   'ContactTagWriteError',
+  'TemplateError',
 ]);
 
 function domainError(

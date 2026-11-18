@@ -1,6 +1,8 @@
 // ============================================================
+// GET  /api/v1/broadcasts — list broadcasts, newest first
+// (scope: broadcasts:read), keyset-paginated, ?status= filter.
 // POST /api/v1/broadcasts — launch a template broadcast
-// (scope: broadcasts:send).
+// (scope: broadcasts:send). Plano Pro only (template sends).
 //
 // Body:
 //   {
@@ -24,7 +26,7 @@
 
 import { after } from 'next/server';
 
-import { apiRoute } from '@/lib/auth/api-context';
+import { apiRoute, requirePlan } from '@/lib/auth/api-context';
 
 // The `after()` fan-out below sends to every recipient sequentially and
 // runs within this route's max duration (the same constraint the
@@ -35,11 +37,40 @@ import { apiRoute } from '@/lib/auth/api-context';
 // still exceed 60s, so very large sends should be split across
 // requests. A durable queue/cron drain is the complete fix (follow-up).
 export const maxDuration = 60;
-import { ok, fail } from '@/lib/api/v1/respond';
+import { ok, okList, fail, badRequest } from '@/lib/api/v1/respond';
+import { parseListParams, keysetFilter, buildPage } from '@/lib/api/v1/pagination';
+import { BROADCAST_COLUMNS, BROADCAST_STATUSES } from '@/lib/api/v1/broadcasts';
 import { resolveAuditUserId } from '@/lib/api/v1/contacts';
 import { createBroadcast, deliverBroadcast } from '@/lib/whatsapp/broadcast-core';
 
+export const GET = apiRoute('broadcasts:read', async (ctx, request) => {
+  requirePlan(ctx, 'pro', 'Disparos');
+  const { limit, cursor } = parseListParams(request);
+  const status = new URL(request.url).searchParams.get('status');
+  let query = ctx.db.from('broadcasts').select(BROADCAST_COLUMNS);
+  if (status !== null) {
+    if (!(BROADCAST_STATUSES as readonly string[]).includes(status)) {
+      throw badRequest(`'status' deve ser um de: ${BROADCAST_STATUSES.join(', ')}`);
+    }
+    query = query.eq('status', status);
+  }
+  query = query
+    .order('created_at', { ascending: false })
+    .order('id', { ascending: false })
+    .limit(limit + 1);
+  const kf = keysetFilter(cursor);
+  if (kf) query = query.or(kf);
+  const { data, error } = await query;
+  if (error) return fail('internal', 'Failed to list broadcasts', 500);
+  const { items, nextCursor } = buildPage(
+    (data ?? []) as unknown as Array<{ created_at: string; id: string }>,
+    limit
+  );
+  return okList(items, nextCursor);
+});
+
 export const POST = apiRoute('broadcasts:send', async (ctx, request) => {
+    requirePlan(ctx, 'pro', 'Disparos');
 
     const body = (await request.json().catch(() => null)) as Record<
       string,

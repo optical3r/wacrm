@@ -6,10 +6,8 @@ import {
   toErrorResponse,
 } from '@/lib/auth/account'
 import { decrypt } from '@/lib/whatsapp/encryption'
-import {
-  deleteMessageTemplate,
-  editMessageTemplate,
-} from '@/lib/whatsapp/meta-api'
+import { editMessageTemplate } from '@/lib/whatsapp/meta-api'
+import { TemplateError, deleteTemplate } from '@/lib/whatsapp/template-core'
 import {
   validateTemplatePayload,
   type TemplatePayload,
@@ -250,64 +248,18 @@ export async function DELETE(
     // the PATCH handler above.
     const { supabase, accountId } = await requireRole('admin')
 
-    const { data: existing, error: lookupErr } = await supabase
-      .from('message_templates')
-      .select('id, name, meta_template_id')
-      .eq('id', id)
-      .eq('account_id', accountId)
-      .maybeSingle()
-    if (lookupErr || !existing) {
+    // Shared with the public API (src/lib/whatsapp/template-core.ts).
+    const { deleted, dryRun } = await deleteTemplate(supabase, accountId, id)
+    if (!deleted) {
       return NextResponse.json({ error: t('templates.notFound') }, { status: 404 })
     }
-
-    if (existing.meta_template_id && !isDryRun()) {
-      const { data: config, error: configError } = await supabase
-        .from('whatsapp_config')
-        .select('*')
-        .eq('account_id', accountId)
-        // Several numbers per Starter account (migration 051): the default one.
-        .order('is_default', { ascending: false })
-        .order('created_at', { ascending: true })
-        .limit(1)
-        .maybeSingle()
-      if (configError || !config || !config.waba_id) {
-        return NextResponse.json(
-          { error: t('templates.notConfiguredDelete') },
-          { status: 400 },
-        )
-      }
-      const accessToken = decrypt(config.access_token)
-      try {
-        await deleteMessageTemplate({
-          wabaId: config.waba_id,
-          accessToken,
-          name: existing.name,
-          metaTemplateId: existing.meta_template_id,
-        })
-      } catch (e) {
-        const message = e instanceof Error ? e.message : t('templates.metaDeleteFailed')
-        return NextResponse.json({ error: message }, { status: 502 })
-      }
-    }
-
-    const { error: delErr } = await supabase
-      .from('message_templates')
-      .delete()
-      .eq('id', id)
-      .eq('account_id', accountId)
-    if (delErr) {
-      return NextResponse.json(
-        {
-          error: t('templates.deletedLocalFailed', { message: delErr.message }),
-        },
-        { status: 500 },
-      )
-    }
-
-    return NextResponse.json({ success: true, dry_run: isDryRun() })
+    return NextResponse.json({ success: true, dry_run: dryRun })
   } catch (error) {
     if (error instanceof UnauthorizedError || error instanceof ForbiddenError) {
       return toErrorResponse(error)
+    }
+    if (error instanceof TemplateError) {
+      return NextResponse.json({ error: error.message }, { status: error.status })
     }
     console.error('Error deleting template:', error)
     return NextResponse.json(

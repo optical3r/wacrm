@@ -249,6 +249,9 @@ export async function createBroadcast(
   };
 }
 
+/** How often the delivery loop looks for a cancel (in recipients). */
+const CANCEL_CHECK_EVERY = 10;
+
 /**
  * Fan out a {@link BroadcastPlan}: send each recipient's template
  * (phone-variant retry) and stamp its `broadcast_recipients` row.
@@ -266,7 +269,18 @@ export async function deliverBroadcast(
   db: SupabaseClient,
   plan: BroadcastPlan
 ): Promise<void> {
-  for (const recipient of plan.planned) {
+  for (const [index, recipient] of plan.planned.entries()) {
+    // A cancel (POST /api/v1/broadcasts/{id}/cancel) marks every pending
+    // recipient failed at once. Check every few sends whether the next
+    // one is still pending, and stop when it is not.
+    if (index % CANCEL_CHECK_EVERY === 0 && index > 0) {
+      const { data: row } = await db
+        .from('broadcast_recipients')
+        .select('status')
+        .eq('id', recipient.recipientRowId)
+        .maybeSingle();
+      if (row && row.status !== 'pending') break;
+    }
     const variants = phoneVariants(recipient.phone);
     let sentMessageId: string | null = null;
     let lastError: string | null = null;

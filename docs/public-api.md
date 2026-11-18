@@ -56,7 +56,16 @@ it. Grant the minimum.
 | `notes:write`         | Create, edit and delete notes                            |
 | `conversations:read`  | List and read conversations                              |
 | `conversations:write` | Start conversations, change status/owners, mark read     |
-| `broadcasts:send`     | Launch broadcast campaigns                               |
+| `deals:read`          | Read pipelines, stages and deals                         |
+| `deals:write`         | Create, move, edit and delete deals and pipelines        |
+| `quick_replies:read`  | List quick replies                                       |
+| `quick_replies:write` | Create, edit and delete quick replies                    |
+| `templates:read`      | Read message templates (Pro plan)                        |
+| `templates:write`     | Create, submit for approval and delete templates (Pro)   |
+| `broadcasts:read`     | List broadcasts, progress and recipients                 |
+| `broadcasts:send`     | Launch and cancel broadcasts (includes `broadcasts:read`) |
+| `team:read`           | Read the team and the lead rotation                      |
+| `channels:read`       | Read the connected numbers and their attendants          |
 | `webhooks:manage`     | Register and manage outbound webhooks                    |
 
 A key with **no scopes** still authenticates and can call
@@ -272,7 +281,8 @@ request fails with `400 bad_request`. Response (202):
 
 ### `GET /api/v1/broadcasts/{id}`
 
-Broadcast status + counts. Scope: `broadcasts:send`. `status` moves
+Broadcast status + counts. Scope: `broadcasts:read` (a `broadcasts:send`
+key also passes). Broadcasts are Pro-plan only. `status` moves
 `sending` → `sent`; `delivered_count` / `read_count` keep climbing as
 Meta delivery webhooks arrive. `404` for another account's broadcast.
 
@@ -300,6 +310,42 @@ Meta delivery webhooks arrive. `404` for another account's broadcast.
 | `POST /api/v1/conversations` | `conversations:write` | `{ phone, name? }` — find or open the chat; sends nothing. National Brazilian numbers get `55`. |
 | `PATCH /api/v1/conversations/{id}` | `conversations:write` | `{ status?, owner_ids? }` — owners must be workspace members; `[]` = no owner |
 | `POST /api/v1/conversations/{id}/read` | `conversations:write` | Zeroes unread and marks the customer's messages read on WhatsApp |
+
+### Pipelines and deals (phase 3)
+
+| Method & path | Scope | Notes |
+| --- | --- | --- |
+| `GET /api/v1/pipelines` · `POST /api/v1/pipelines` | `deals:read` · `deals:write` | List includes ordered `stages`. POST `{ name, stages?: [{ name, color? }] }`; without stages the five defaults are created |
+| `GET` / `PATCH` / `DELETE /api/v1/pipelines/{id}` | `deals:read` · `deals:write` | PATCH `{ name }`. **DELETE removes all its deals too** |
+| `POST /api/v1/pipelines/{id}/stages` | `deals:write` | `{ name, color? }`, added at the end |
+| `PATCH` / `DELETE /api/v1/pipelines/{id}/stages/{stageId}` | `deals:write` | PATCH `{ name?, color?, position? }`; DELETE only when no deal is in it |
+| `GET /api/v1/deals` | `deals:read` | Filters `pipeline_id`, `stage_id`, `status` (open/won/lost), `contact_id`, `assigned_to`. Paginated |
+| `POST /api/v1/deals` | `deals:write` | `{ title, pipeline_id, stage_id?, value?, currency?, contact_id?, conversation_id?, assigned_to?, notes?, expected_close_date? }`. No stage → first stage; no currency → account default |
+| `GET` / `PATCH` / `DELETE /api/v1/deals/{id}` | `deals:read` · `deals:write` | PATCH any field, `status` won/lost/open, `stage_id` (same pipeline) or `pipeline_id` (+ `stage_id`) to move |
+
+### Quick replies, templates and broadcasts (phase 3)
+
+| Method & path | Scope | Notes |
+| --- | --- | --- |
+| `GET` · `POST /api/v1/quick-replies` | `quick_replies:read` · `quick_replies:write` | `{ title, kind: "text", content_text }` or `{ title, kind: "interactive", interactive_payload }` |
+| `GET` / `PATCH` / `DELETE /api/v1/quick-replies/{id}` | `quick_replies:read` · `quick_replies:write` | |
+| `GET /api/v1/templates` | `templates:read` | **Pro only.** Filters `status`, `language` |
+| `POST /api/v1/templates` | `templates:write` | **Pro only.** Same payload as the dashboard editor (`name`, `category` Marketing/Utility, `language`, `body_text`, optional header, footer, buttons, `sample_values`); submits to Meta for approval |
+| `GET` / `DELETE /api/v1/templates/{id}` | `templates:read` · `templates:write` | **Pro only.** DELETE removes it on Meta too |
+| `GET /api/v1/broadcasts` | `broadcasts:read` | **Pro only.** Filter `status`. Paginated |
+| `GET /api/v1/broadcasts/{id}/recipients` | `broadcasts:read` | Each recipient's status with the contact's name and phone. Filter `status`. Paginated |
+| `POST /api/v1/broadcasts/{id}/cancel` | `broadcasts:send` | Stops a broadcast still going out; recipients not yet sent are marked failed ("Cancelado antes do envio") |
+
+### Team and numbers (phase 3, read-only)
+
+| Method & path | Scope | Notes |
+| --- | --- | --- |
+| `GET /api/v1/team` | `team:read` | Members with `user_id`, name, email, role |
+| `GET /api/v1/lead-rotation` | `team:read` | `{ enabled, member_ids, last_user_id }` |
+| `GET /api/v1/channels` | `channels:read` | Numbers with label, status, default, groups and signature switches and `member_ids`. Never any token |
+
+Connecting numbers, inviting or removing people and changing the
+account owner stay in the dashboard on purpose.
 
 Every id that belongs to another workspace answers `404`, exactly like
 one that does not exist.
@@ -335,6 +381,19 @@ things happen in your account. **Migration required:** apply
 | `message.received`       | An inbound message arrives from a contact         |
 | `message.status_updated` | A message you sent changed delivery status        |
 | `conversation.created`   | A new conversation is opened for a contact        |
+| `conversation.status_changed` | A conversation moved to open/pending/closed  |
+| `conversation.owners_changed` | A lead's owners changed (`owner_ids`, `previous_owner_ids`) |
+| `contact.created` · `contact.deleted` | A contact was created or deleted     |
+| `contact.tag_added` · `contact.tag_removed` | A tag was put on or taken off a contact |
+| `deal.created` · `deal.deleted` | A deal was created or deleted              |
+| `deal.stage_changed`     | A deal moved stage (`previous_stage_id`)          |
+| `deal.status_changed`    | A deal was won, lost or reopened (`previous_status`) |
+| `flow.started` · `flow.ended` | A flow run started or ended (`status`, `end_reason`) |
+
+The events from `conversation.status_changed` down are raised by the
+database (migration `063_webhook_db_events.sql`), so they fire no
+matter where the change came from: the dashboard, the API, the MCP, a
+flow or an automation. Groups never raise events.
 
 ### Managing endpoints
 

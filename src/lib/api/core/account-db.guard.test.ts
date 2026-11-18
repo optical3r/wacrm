@@ -31,6 +31,10 @@ const VETTED = [
   "addContactTagAndDispatch",
   "removeContactTag",
   "markConversationReadOnWhatsApp",
+  "getAccountCurrency",
+  "submitTemplate",
+  "deleteTemplate",
+  "listWorkspaceMembers",
 ];
 
 function walk(dir: string): string[] {
