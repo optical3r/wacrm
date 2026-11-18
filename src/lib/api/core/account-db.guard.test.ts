@@ -35,6 +35,7 @@ const VETTED = [
   "submitTemplate",
   "deleteTemplate",
   "listWorkspaceMembers",
+  "setFlowStatus",
 ];
 
 function walk(dir: string): string[] {

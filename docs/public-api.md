@@ -66,6 +66,13 @@ it. Grant the minimum.
 | `broadcasts:send`     | Launch and cancel broadcasts (includes `broadcasts:read`) |
 | `team:read`           | Read the team and the lead rotation                      |
 | `channels:read`       | Read the connected numbers and their attendants          |
+| `flows:read`          | Read flows and their runs                                |
+| `flows:write`         | Turn flows on/off; start and stop a flow for a contact   |
+| `automations:read`    | Read automations and their history                       |
+| `automations:write`   | Turn automations on/off                                  |
+| `notifications:read`  | Read the key creator's notifications                     |
+| `notifications:write` | Mark notifications read                                  |
+| `reports:read`        | Read the dashboard numbers                               |
 | `webhooks:manage`     | Register and manage outbound webhooks                    |
 
 A key with **no scopes** still authenticates and can call
@@ -346,6 +353,28 @@ Meta delivery webhooks arrive. `404` for another account's broadcast.
 
 Connecting numbers, inviting or removing people and changing the
 account owner stay in the dashboard on purpose.
+
+### Flows, automations, groups, notifications and reports (phase 4)
+
+| Method & path | Scope | Notes |
+| --- | --- | --- |
+| `GET /api/v1/flows` · `GET /api/v1/flows/{id}` | `flows:read` | Filter `status`. The single flow includes its `nodes` |
+| `POST /api/v1/flows/{id}/status` | `flows:write` | `{ status: "active" \| "draft" \| "archived" }`. Activating runs the editor's checks; problems → `422` with `issues` |
+| `GET /api/v1/flows/{id}/runs` | `flows:read` | Latest runs, `?status=`, `?limit=` up to 100 |
+| `POST /api/v1/flows/{id}/start` | `flows:write` | `{ conversation_id }`. Groups refused; contact already in a flow → `409` |
+| `POST /api/v1/flow-runs/{id}/stop` | `flows:write` | Ends an active run as `paused_by_agent` |
+| `GET /api/v1/automations` · `GET /api/v1/automations/{id}` | `automations:read` | Filter `active=true\|false`. The single one includes its `steps` |
+| `PATCH /api/v1/automations/{id}` | `automations:write` | `{ is_active }`. Turning on runs the editor's checks; problems → `400` with `issues` |
+| `GET /api/v1/automations/{id}/logs` | `automations:read` | Latest runs, `?limit=` up to 100 |
+| `POST /api/v1/conversations/{id}/messages` | `messages:send` | Send into an existing chat (same body as `POST /api/v1/messages`, without `to`). Groups only on Starter |
+| `GET /api/v1/groups` | `conversations:read` | **Starter only.** Group chats; `?hidden=true` for hidden ones. Read messages via `GET /api/v1/conversations/{id}/messages` |
+| `PATCH /api/v1/groups/{id}` | `conversations:write` | **Starter only.** `{ hidden }` hides or shows a group |
+| `GET /api/v1/notifications` | `notifications:read` | The key creator's notifications in this workspace; `?unread=true` |
+| `POST /api/v1/notifications/read` | `notifications:write` | `{ ids? }`; without ids marks every unread one |
+| `GET /api/v1/reports/summary` | `reports:read` | `?days=1..365` (default 30): conversations by status and owner, contacts, deals open/won/lost, flow runs, broadcasts (Pro). Groups excluded |
+
+Building or editing flows and automation steps stays in the visual
+editors.
 
 Every id that belongs to another workspace answers `404`, exactly like
 one that does not exist.

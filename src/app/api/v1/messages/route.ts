@@ -34,11 +34,8 @@
 import { apiRoute } from '@/lib/auth/api-context';
 import { ok, fail } from '@/lib/api/v1/respond';
 import { resolveConversationByPhone } from '@/lib/whatsapp/resolve-conversation';
-import {
-  sendMessageToConversation,
-  validateSendMessageParams,
-} from '@/lib/whatsapp/send-message';
-import type { InteractiveMessagePayload } from '@/lib/whatsapp/interactive';
+import { sendMessageToConversation } from '@/lib/whatsapp/send-message';
+import { readSendBody } from '@/lib/api/v1/send-body';
 
 export const POST = apiRoute('messages:send', async (ctx, request) => {
 
@@ -55,42 +52,10 @@ export const POST = apiRoute('messages:send', async (ctx, request) => {
       return fail('bad_request', "'to' is required", 400);
     }
 
-    const type = typeof body.type === 'string' ? body.type : 'text';
-
-    // Unpack the optional `template` object into the flat params the
-    // send core expects. `params` as an array → legacy positional body
-    // params; as an object → structured header/body/button params.
-    const template =
-      body.template && typeof body.template === 'object'
-        ? (body.template as Record<string, unknown>)
-        : null;
-    const templateParams = Array.isArray(template?.params)
-      ? (template.params as unknown[]).filter(
-          (p): p is string => typeof p === 'string'
-        )
-      : undefined;
-    const templateMessageParams =
-      template?.params && !Array.isArray(template.params)
-        ? template.params
-        : undefined;
-
     // Validate the message shape BEFORE resolveConversationByPhone
     // finds-or-creates a contact + conversation, so a bad payload 400s
     // without leaving an orphan contact/conversation behind.
-    // Validated by `validateSendMessageParams` below; the cast just bridges
-    // the untyped JSON body to the send-core param type.
-    const interactivePayload =
-      body.interactive_payload && typeof body.interactive_payload === 'object'
-        ? (body.interactive_payload as InteractiveMessagePayload)
-        : null;
-
-    validateSendMessageParams({
-      messageType: type,
-      contentText: typeof body.text === 'string' ? body.text : null,
-      mediaUrl: typeof body.media_url === 'string' ? body.media_url : null,
-      templateName: typeof template?.name === 'string' ? template.name : null,
-      interactivePayload,
-    });
+    const message = readSendBody(body);
 
     // Find-or-create the conversation for this phone, then send. Both
     // steps share `SendMessageError`, so one catch maps the whole
@@ -106,23 +71,7 @@ export const POST = apiRoute('messages:send', async (ctx, request) => {
     const result = await sendMessageToConversation(
       ctx.db.trusted,
       ctx.accountId,
-      {
-        conversationId: resolved.conversationId,
-        messageType: type,
-        contentText: typeof body.text === 'string' ? body.text : null,
-        mediaUrl: typeof body.media_url === 'string' ? body.media_url : null,
-        filename: typeof body.filename === 'string' ? body.filename : null,
-        templateName: typeof template?.name === 'string' ? template.name : null,
-        templateLanguage:
-          typeof template?.language === 'string' ? template.language : null,
-        templateParams,
-        templateMessageParams,
-        interactivePayload,
-        replyToMessageId:
-          typeof body.reply_to_message_id === 'string'
-            ? body.reply_to_message_id
-            : null,
-      }
+      { ...message, conversationId: resolved.conversationId }
     );
 
     return ok(

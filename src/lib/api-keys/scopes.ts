@@ -37,6 +37,13 @@ export const API_SCOPES = [
   'broadcasts:send',
   'team:read',
   'channels:read',
+  'flows:read',
+  'flows:write',
+  'automations:read',
+  'automations:write',
+  'notifications:read',
+  'notifications:write',
+  'reports:read',
   'webhooks:manage',
 ] as const;
 
@@ -67,6 +74,13 @@ export const SCOPE_DESCRIPTIONS: Record<ApiScope, string> = {
   'broadcasts:send': 'Criar e cancelar disparos (inclui ver o andamento)',
   'team:read': 'Ver a equipe e o rodízio de leads',
   'channels:read': 'Ver os números conectados e quem atende cada um',
+  'flows:read': 'Ver fluxos e as execuções deles',
+  'flows:write': 'Ligar e desligar fluxos; iniciar e parar um fluxo para um contato',
+  'automations:read': 'Ver automações e o histórico de execução',
+  'automations:write': 'Ligar e desligar automações',
+  'notifications:read': 'Ler as notificações de quem criou a chave',
+  'notifications:write': 'Marcar notificações como lidas',
+  'reports:read': 'Ver os números do painel (conversas, contatos, negócios, fluxos)',
   'webhooks:manage': 'Cadastrar e gerenciar webhooks de eventos',
 };
 

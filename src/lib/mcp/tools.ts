@@ -53,6 +53,20 @@ import * as broadcastCancel from '@/app/api/v1/broadcasts/[id]/cancel/route';
 import * as team from '@/app/api/v1/team/route';
 import * as channels from '@/app/api/v1/channels/route';
 import * as leadRotation from '@/app/api/v1/lead-rotation/route';
+import * as flows from '@/app/api/v1/flows/route';
+import * as flow from '@/app/api/v1/flows/[id]/route';
+import * as flowStatus from '@/app/api/v1/flows/[id]/status/route';
+import * as flowRuns from '@/app/api/v1/flows/[id]/runs/route';
+import * as flowStart from '@/app/api/v1/flows/[id]/start/route';
+import * as flowRunStop from '@/app/api/v1/flow-runs/[id]/stop/route';
+import * as automations from '@/app/api/v1/automations/route';
+import * as automation from '@/app/api/v1/automations/[id]/route';
+import * as automationLogs from '@/app/api/v1/automations/[id]/logs/route';
+import * as groups from '@/app/api/v1/groups/route';
+import * as group from '@/app/api/v1/groups/[id]/route';
+import * as notifications from '@/app/api/v1/notifications/route';
+import * as notificationsRead from '@/app/api/v1/notifications/read/route';
+import * as reportSummary from '@/app/api/v1/reports/summary/route';
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Args = Record<string, any>;
@@ -928,6 +942,206 @@ export const MCP_TOOLS: McpToolDef[] = [
     route: leadRotation.GET,
     method: 'GET',
     path: () => '/api/v1/lead-rotation',
+  },
+  // ---- phase 4: flows ------------------------------------------------
+  {
+    name: 'list_flows',
+    title: 'Listar fluxos',
+    description: 'Lista os fluxos (chatbots) da conta com status, gatilho e quantas vezes rodaram.',
+    kind: 'read',
+    input: { status: z.enum(['draft', 'active', 'archived']).optional() },
+    route: flows.GET,
+    method: 'GET',
+    path: () => '/api/v1/flows',
+    query: (a) => pick(a, ['status']),
+  },
+  {
+    name: 'get_flow',
+    title: 'Ver fluxo',
+    description: 'Lê um fluxo com todos os blocos (nós) e a configuração de cada um.',
+    kind: 'read',
+    input: { id: id('do fluxo') },
+    route: flow.GET,
+    method: 'GET',
+    path: (a) => `/api/v1/flows/${a.id}`,
+    params: (a) => ({ id: a.id }),
+  },
+  {
+    name: 'set_flow_status',
+    title: 'Ligar ou desligar fluxo',
+    description: 'Ativa (active), volta para rascunho (draft) ou arquiva (archived) um fluxo. Ativar faz as mesmas checagens do editor.',
+    kind: 'write',
+    input: { id: id('do fluxo'), status: z.enum(['draft', 'active', 'archived']) },
+    route: flowStatus.POST,
+    method: 'POST',
+    path: (a) => `/api/v1/flows/${a.id}/status`,
+    params: (a) => ({ id: a.id }),
+    body: (a) => pick(a, ['status']),
+  },
+  {
+    name: 'list_flow_runs',
+    title: 'Ver execuções do fluxo',
+    description: 'Lista as execuções mais recentes de um fluxo: contato, status, bloco atual e motivo do fim.',
+    kind: 'read',
+    input: {
+      id: id('do fluxo'),
+      status: z.enum(['active', 'completed', 'handed_off', 'timed_out', 'paused_by_agent', 'failed']).optional(),
+      limit: page.limit,
+    },
+    route: flowRuns.GET,
+    method: 'GET',
+    path: (a) => `/api/v1/flows/${a.id}/runs`,
+    params: (a) => ({ id: a.id }),
+    query: (a) => pick(a, ['status', 'limit']),
+  },
+  {
+    name: 'start_flow',
+    title: 'Iniciar fluxo para um contato',
+    description: 'Inicia um fluxo ativo para o contato de uma conversa. O fluxo manda mensagens ao cliente.',
+    kind: 'confirm',
+    input: { id: id('do fluxo'), conversation_id: id('da conversa'), confirmar },
+    route: flowStart.POST,
+    method: 'POST',
+    path: (a) => `/api/v1/flows/${a.id}/start`,
+    params: (a) => ({ id: a.id }),
+    body: (a) => pick(a, ['conversation_id']),
+  },
+  {
+    name: 'stop_flow_run',
+    title: 'Parar execução de fluxo',
+    description: 'Para uma execução de fluxo em andamento (o contato sai do fluxo).',
+    kind: 'write',
+    input: { id: id('da execução (flow_run_id)') },
+    route: flowRunStop.POST,
+    method: 'POST',
+    path: (a) => `/api/v1/flow-runs/${a.id}/stop`,
+    params: (a) => ({ id: a.id }),
+  },
+  // ---- phase 4: automations --------------------------------------------
+  {
+    name: 'list_automations',
+    title: 'Listar automações',
+    description: 'Lista as automações com gatilho, se estão ligadas e quantas vezes rodaram.',
+    kind: 'read',
+    input: { active: z.enum(['true', 'false']).optional() },
+    route: automations.GET,
+    method: 'GET',
+    path: () => '/api/v1/automations',
+    query: (a) => pick(a, ['active']),
+  },
+  {
+    name: 'get_automation',
+    title: 'Ver automação',
+    description: 'Lê uma automação com todos os passos.',
+    kind: 'read',
+    input: { id: id('da automação') },
+    route: automation.GET,
+    method: 'GET',
+    path: (a) => `/api/v1/automations/${a.id}`,
+    params: (a) => ({ id: a.id }),
+  },
+  {
+    name: 'set_automation_active',
+    title: 'Ligar ou desligar automação',
+    description: 'Liga (true) ou desliga (false) uma automação. Ligar faz as mesmas checagens do editor.',
+    kind: 'write',
+    input: { id: id('da automação'), is_active: z.boolean() },
+    route: automation.PATCH,
+    method: 'PATCH',
+    path: (a) => `/api/v1/automations/${a.id}`,
+    params: (a) => ({ id: a.id }),
+    body: (a) => pick(a, ['is_active']),
+  },
+  {
+    name: 'list_automation_logs',
+    title: 'Ver histórico da automação',
+    description: 'Lista as execuções mais recentes de uma automação, com status e erro quando houver.',
+    kind: 'read',
+    input: { id: id('da automação'), limit: page.limit },
+    route: automationLogs.GET,
+    method: 'GET',
+    path: (a) => `/api/v1/automations/${a.id}/logs`,
+    params: (a) => ({ id: a.id }),
+    query: (a) => pick(a, ['limit']),
+  },
+  // ---- phase 4: groups (Starter) and sending into a chat ---------------
+  {
+    name: 'list_groups',
+    title: 'Listar grupos',
+    description: 'Lista os grupos de WhatsApp dos números da conta. Só no plano Starter. hidden=true mostra os ocultos.',
+    kind: 'read',
+    input: { hidden: z.enum(['true', 'false']).optional() },
+    route: groups.GET,
+    method: 'GET',
+    path: () => '/api/v1/groups',
+    query: (a) => pick(a, ['hidden']),
+  },
+  {
+    name: 'set_group_hidden',
+    title: 'Ocultar ou mostrar grupo',
+    description: 'Oculta um grupo da caixa de entrada (as mensagens novas dele deixam de ser salvas) ou mostra de novo. Só no Starter.',
+    kind: 'write',
+    input: { id: id('do grupo (conversa)'), hidden: z.boolean() },
+    route: group.PATCH,
+    method: 'PATCH',
+    path: (a) => `/api/v1/groups/${a.id}`,
+    params: (a) => ({ id: a.id }),
+    body: (a) => pick(a, ['hidden']),
+  },
+  {
+    name: 'send_to_conversation',
+    title: 'Enviar mensagem numa conversa',
+    description:
+      'Envia uma mensagem de texto (ou mídia por media_url) numa conversa que já existe, inclusive grupo no plano Starter.',
+    kind: 'confirm',
+    input: {
+      conversation_id: id('da conversa ou grupo'),
+      type: z.enum(['text', 'image', 'video', 'audio', 'document']).optional(),
+      text: z.string().optional(),
+      media_url: z.string().optional(),
+      filename: z.string().optional(),
+      confirmar,
+    },
+    route: conversationMessages.POST,
+    method: 'POST',
+    path: (a) => `/api/v1/conversations/${a.conversation_id}/messages`,
+    params: (a) => ({ id: a.conversation_id }),
+    body: (a) => pick(a, ['type', 'text', 'media_url', 'filename']),
+  },
+  // ---- phase 4: notifications and reports -------------------------------
+  {
+    name: 'list_notifications',
+    title: 'Ver notificações',
+    description: 'Lista as notificações de quem criou a chave, mais novas primeiro.',
+    kind: 'read',
+    input: { unread: z.enum(['true', 'false']).optional(), limit: page.limit },
+    route: notifications.GET,
+    method: 'GET',
+    path: () => '/api/v1/notifications',
+    query: (a) => pick(a, ['unread', 'limit']),
+  },
+  {
+    name: 'mark_notifications_read',
+    title: 'Marcar notificações como lidas',
+    description: 'Marca como lidas as notificações indicadas em ids, ou todas as não lidas se ids não vier.',
+    kind: 'write',
+    input: { ids: z.array(z.string()).optional() },
+    route: notificationsRead.POST,
+    method: 'POST',
+    path: () => '/api/v1/notifications/read',
+    body: (a) => pick(a, ['ids']),
+  },
+  {
+    name: 'get_report_summary',
+    title: 'Resumo do painel',
+    description:
+      'Números da conta num período (days, padrão 30): conversas por status e por dono, contatos novos, negócios abertos/ganhos/perdidos, fluxos e disparos.',
+    kind: 'read',
+    input: { days: z.number().int().min(1).max(365).optional() },
+    route: reportSummary.GET,
+    method: 'GET',
+    path: () => '/api/v1/reports/summary',
+    query: (a) => pick(a, ['days']),
   },
 ];
 /* eslint-enable @typescript-eslint/no-explicit-any */

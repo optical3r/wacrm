@@ -95,6 +95,14 @@ export function createFakeSupabase(tables: Record<string, Row[]>) {
         filters.push((r) => r[col] > val);
         return b;
       },
+      gte(col: string, val: string | number) {
+        filters.push((r) => r[col] != null && r[col] >= val);
+        return b;
+      },
+      lt(col: string, val: string | number) {
+        filters.push((r) => r[col] != null && r[col] < val);
+        return b;
+      },
       is(col: string, val: unknown) {
         filters.push((r) => (r[col] ?? null) === val);
         return b;
