@@ -63,8 +63,9 @@ export async function dispatchWebhookEvent(
     // HMAC over the raw request body. `id` is a per-delivery uuid the
     // receiver can dedupe on (deliveries are at-least-once and may
     // repeat / arrive out of order).
+    const deliveryId = randomUUID();
     const payload = JSON.stringify({
-      id: randomUUID(),
+      id: deliveryId,
       event,
       occurred_at: new Date().toISOString(),
       account_id: accountId,
@@ -74,7 +75,7 @@ export async function dispatchWebhookEvent(
 
     await Promise.allSettled(
       (rows as EndpointRow[]).map((row) =>
-        deliverOne(db, row, event, payload, tsSeconds)
+        deliverOne(db, row, event, payload, tsSeconds, { accountId, deliveryId })
       )
     );
   } catch (err) {
@@ -88,14 +89,29 @@ async function deliverOne(
   row: EndpointRow,
   event: WebhookEvent,
   payload: string,
-  tsSeconds: number
+  tsSeconds: number,
+  meta: { accountId: string; deliveryId: string }
 ): Promise<void> {
+  const started = Date.now();
+  const log = (ok: boolean, statusCode: number | null, error: string | null) =>
+    logDelivery(db, {
+      endpoint_id: row.id,
+      account_id: meta.accountId,
+      event,
+      delivery_id: meta.deliveryId,
+      ok,
+      status_code: statusCode,
+      error,
+      duration_ms: Date.now() - started,
+    });
+
   // SSRF guard: refuse to POST to a host that resolves to a private /
   // loopback / link-local address. Counts as a failure so a
   // misconfigured internal URL surfaces and eventually auto-disables.
   if (!(await isDeliverableUrl(row.url))) {
     console.warn('[webhooks] refusing non-public delivery target for', row.id);
     await recordFailure(db, row);
+    await log(false, null, 'Endereço não público');
     return;
   }
 
@@ -107,9 +123,11 @@ async function deliverOne(
     // signature — count it as a failure so it eventually auto-disables.
     console.error('[webhooks] secret decrypt failed for', row.id, err);
     await recordFailure(db, row);
+    await log(false, null, 'Segredo ilegível');
     return;
   }
 
+  let statusCode: number | null = null;
   try {
     const res = await fetch(row.url, {
       method: 'POST',
@@ -126,6 +144,7 @@ async function deliverOne(
       redirect: 'manual',
       signal: AbortSignal.timeout(DELIVERY_TIMEOUT_MS),
     });
+    statusCode = res.status;
     if (!res.ok) throw new Error(`endpoint responded ${res.status}`);
 
     // Success: clear the failure streak.
@@ -133,12 +152,22 @@ async function deliverOne(
       .from('webhook_endpoints')
       .update({ failure_count: 0, last_delivery_at: new Date().toISOString() })
       .eq('id', row.id);
+    await log(true, statusCode, null);
   } catch (err) {
-    console.warn(
-      `[webhooks] delivery to ${row.id} failed:`,
-      err instanceof Error ? err.message : err
-    );
+    const message = err instanceof Error ? err.message : String(err);
+    console.warn(`[webhooks] delivery to ${row.id} failed:`, message);
     await recordFailure(db, row);
+    await log(false, statusCode, message.slice(0, 300));
+  }
+}
+
+/** Best-effort row for the webhooks screen (migration 065). Never throws. */
+async function logDelivery(db: SupabaseClient, row: Record<string, unknown>): Promise<void> {
+  try {
+    const { error } = await db.from('webhook_deliveries').insert(row);
+    if (error) console.warn('[webhooks] delivery log insert failed:', error.message);
+  } catch (err) {
+    console.warn('[webhooks] delivery log insert failed:', err);
   }
 }
 

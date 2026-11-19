@@ -16,7 +16,7 @@ export async function GET() {
     const [accountsRes, profilesRes, configsRes, statsRes, orgsRes] = await Promise.all([
       admin
         .from("accounts")
-        .select("id, name, plan, status, owner_user_id, created_at, status_changed_at, max_numbers, organization_id")
+        .select("id, name, plan, status, owner_user_id, created_at, status_changed_at, max_numbers, organization_id, api_enabled, api_rate_limit")
         .order("created_at", { ascending: false }),
       admin.from("profiles").select("user_id, email, full_name, account_id"),
       admin
@@ -83,6 +83,8 @@ export async function GET() {
           messages_30d: stat?.messages_30d ?? 0,
           last_message_at: stat?.last_message_at ?? null,
           max_numbers: (a.max_numbers as number | null) ?? 5,
+          api_enabled: a.api_enabled !== false,
+          api_rate_limit: (a.api_rate_limit as number | null) ?? null,
           organization: org
             ? {
                 id: org.id,

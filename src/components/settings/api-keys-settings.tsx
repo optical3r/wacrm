@@ -23,6 +23,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import { cn } from '@/lib/utils';
 import {
   Dialog,
   DialogContent,
@@ -37,13 +38,17 @@ import { Switch } from '@/components/ui/switch';
 import { RequireRole } from '@/components/auth/require-role';
 import { useAuth } from '@/hooks/use-auth';
 import {
-  API_SCOPES,
-  SCOPE_DESCRIPTIONS,
-  type ApiScope,
+  API_AREAS,
+  areaLevels,
+  areasFromScopes,
+  scopesFromAreas,
+  type AreaLevel,
 } from '@/lib/api-keys/scopes';
 import { useTranslations } from 'next-intl';
 import { SettingsPanelHead } from './settings-panel-head';
 import { ConnectedApps } from './connected-apps';
+import { ApiUsage } from './api-usage';
+import { WebhooksSettings } from './webhooks-settings';
 
 interface ApiKey {
   id: string;
@@ -104,6 +109,16 @@ function SnippetBlock({ label, value, hint }: { label: string; value: string; hi
       {hint && <p className="text-muted-foreground text-xs">{hint}</p>}
     </div>
   );
+}
+
+/** The areas a key reaches, for the badges in the list. */
+function keyAreas(scopes: string[]) {
+  const levels = areasFromScopes(scopes);
+  return API_AREAS.filter((a) => levels[a.id] !== 'none').map((a) => ({
+    id: a.id,
+    label: a.label,
+    level: levels[a.id],
+  }));
 }
 
 function keyStatus(k: ApiKey): 'active' | 'revoked' | 'expired' {
@@ -291,12 +306,13 @@ export function ApiKeysSettings() {
                             {t('noScopes')}
                           </span>
                         ) : (
-                          k.scopes.map((s) => (
+                          keyAreas(k.scopes).map(({ id, label, level }) => (
                             <Badge
-                              key={s}
+                              key={id}
+                              title={k.scopes.join(' ')}
                               className="border-border bg-muted text-muted-foreground text-[10px]"
                             >
-                              {s}
+                              {label}: {level === 'write' ? t('levelWrite') : t('levelRead')}
                             </Badge>
                           ))
                         )}
@@ -379,10 +395,23 @@ export function ApiKeysSettings() {
           <SnippetBlock label={t('claudeCodeLabel')} value={claudeCodeSnippet(t('yourKeyPlaceholder'))} />
           <SnippetBlock label={t('codexLabel')} value={codexSnippet()} hint={t('codexEnvHint')} />
           <SnippetBlock label={t('claudeAiLabel')} value={mcpUrl()} hint={t('claudeAiHint')} />
+          <p className="text-muted-foreground text-xs">
+            <a href="/docs/api" target="_blank" rel="noreferrer" className="text-primary hover:text-primary/80">
+              {t('docsLink')}
+            </a>
+            {' · '}
+            {t('docsHint')}
+          </p>
         </CardContent>
       </Card>
 
-      {canEditSettings && <ConnectedApps />}
+      {canEditSettings && (
+        <>
+          <ConnectedApps />
+          <ApiUsage />
+          <WebhooksSettings />
+        </>
+      )}
 
       <CreateKeyDialog
         open={createOpen}
@@ -408,7 +437,10 @@ function CreateKeyDialog({
 }) {
   const t = useTranslations('Settings.apiKeys');
   const [name, setName] = useState('');
-  const [scopes, setScopes] = useState<ApiScope[]>([]);
+  const { account } = useAuth();
+  const plan = account?.plan === 'starter' ? 'starter' : 'pro';
+  const areas = API_AREAS.filter((a) => !a.plan || a.plan === plan);
+  const [levels, setLevels] = useState<Record<string, AreaLevel>>({});
   const [mcpEnabled, setMcpEnabled] = useState(true);
   const [mcpAllowWrites, setMcpAllowWrites] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -417,17 +449,22 @@ function CreateKeyDialog({
 
   function reset() {
     setName('');
-    setScopes([]);
+    setLevels({});
     setMcpEnabled(true);
     setMcpAllowWrites(false);
     setSubmitting(false);
     setCreatedKey(null);
   }
 
-  function toggleScope(scope: ApiScope, checked: boolean) {
-    setScopes((prev) =>
-      checked ? [...prev, scope] : prev.filter((s) => s !== scope)
-    );
+  function setAll(level: AreaLevel) {
+    const next: Record<string, AreaLevel> = {};
+    for (const a of areas) {
+      const offered = areaLevels(a);
+      next[a.id] = offered.includes(level) ? level : level === 'none' ? 'none' : offered[offered.length - 1];
+      // "Tudo leitura" leaves write-only areas (webhooks) off.
+      if (level === 'read' && !a.read.length) next[a.id] = 'none';
+    }
+    setLevels(next);
   }
 
   async function handleCreate() {
@@ -441,7 +478,7 @@ function CreateKeyDialog({
       const res = await fetch('/api/account/api-keys', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: trimmed, scopes, mcpEnabled, mcpAllowWrites }),
+        body: JSON.stringify({ name: trimmed, scopes: scopesFromAreas(levels), mcpEnabled, mcpAllowWrites }),
       });
       const payload = await res.json().catch(() => ({}));
       if (!res.ok) {
@@ -553,38 +590,51 @@ function CreateKeyDialog({
               </div>
 
               <div className="space-y-2">
-                <Label className="text-muted-foreground">{t('scopesLabel')}</Label>
-                <div className="border-border space-y-2 rounded-md border p-3">
-                  {API_SCOPES.map((scope) => (
-                    <label
-                      key={scope}
-                      className="flex cursor-pointer items-start gap-2.5"
-                    >
-                      <Checkbox
-                        checked={scopes.includes(scope)}
-                        onCheckedChange={(checked) =>
-                          toggleScope(scope, checked === true)
-                        }
-                        className="mt-0.5"
-                      />
-                      <span className="min-w-0">
-                        <span className="text-foreground block font-mono text-xs">
-                          {scope}
-                        </span>
-                        <span className="text-muted-foreground block text-xs">
-                          {SCOPE_DESCRIPTIONS[scope]}
-                        </span>
-                      </span>
-                    </label>
-                  ))}
+                <div className="flex items-center justify-between gap-2">
+                  <Label className="text-muted-foreground">{t('areasLabel')}</Label>
+                  <div className="flex gap-1">
+                    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setAll('read')}>
+                      {t('presetRead')}
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setAll('write')}>
+                      {t('presetAll')}
+                    </Button>
+                    <Button type="button" variant="ghost" size="sm" className="h-7 px-2 text-xs" onClick={() => setAll('none')}>
+                      {t('presetNone')}
+                    </Button>
+                  </div>
                 </div>
-                <p className="text-muted-foreground text-xs">
-                  {t.rich('scopesHint', {
-                    code: (chunks: React.ReactNode) => (
-                      <code className="text-[11px]">{chunks}</code>
-                    ),
+                <div className="border-border divide-border max-h-72 divide-y overflow-y-auto rounded-md border">
+                  {areas.map((area) => {
+                    const current = levels[area.id] ?? 'none';
+                    return (
+                      <div key={area.id} className="flex items-center justify-between gap-3 px-3 py-2">
+                        <span className="text-foreground text-xs" title={[...area.read, ...area.write].join(' ')}>
+                          {area.label}
+                        </span>
+                        <div className="border-border flex shrink-0 overflow-hidden rounded-md border text-[11px]">
+                          {areaLevels(area).map((level) => (
+                            <button
+                              key={level}
+                              type="button"
+                              aria-pressed={current === level}
+                              onClick={() => setLevels((prev) => ({ ...prev, [area.id]: level }))}
+                              className={cn(
+                                'px-2.5 py-1 transition-colors',
+                                current === level
+                                  ? 'bg-primary text-primary-foreground'
+                                  : 'text-muted-foreground hover:bg-muted'
+                              )}
+                            >
+                              {level === 'none' ? t('levelNone') : level === 'read' ? t('levelRead') : t('levelWrite')}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                    );
                   })}
-                </p>
+                </div>
+                <p className="text-muted-foreground text-xs">{t('areasHint')}</p>
               </div>
 
               <div className="border-border space-y-3 rounded-md border p-3">

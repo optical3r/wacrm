@@ -329,6 +329,19 @@ describe('tokens', () => {
     expect(after.status).toBe(400);
   });
 
+  it('connecting the same app again replaces the old connection', async () => {
+    const { body: client } = await registerClient();
+    const { body: first } = await exchange(client.client_id, await codeFor(client.client_id));
+    const { body: second } = await exchange(client.client_id, await codeFor(client.client_id));
+    await expect(authenticateApi(mcpReq(String(first.access_token)), { allowOAuth: true })).rejects.toBeInstanceOf(ApiError);
+    const ctx = await authenticateApi(mcpReq(String(second.access_token)), { allowOAuth: true });
+    expect(ctx.accountId).toBe(A);
+    // Another workspace is a separate connection and stays.
+    const { body: other } = await exchange(client.client_id, await codeFor(client.client_id, B));
+    await expect(authenticateApi(mcpReq(String(second.access_token)), { allowOAuth: true })).resolves.toBeTruthy();
+    await expect(authenticateApi(mcpReq(String(other.access_token)), { allowOAuth: true })).resolves.toBeTruthy();
+  });
+
   it('revocation ends the connection', async () => {
     const { body: client } = await registerClient();
     const { body } = await exchange(client.client_id, await codeFor(client.client_id));

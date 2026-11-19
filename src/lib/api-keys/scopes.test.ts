@@ -61,3 +61,22 @@ describe('SCOPE_DESCRIPTIONS', () => {
     }
   });
 });
+
+describe('areas', () => {
+  it('cover every scope exactly once', async () => {
+    const { API_AREAS } = await import('./scopes');
+    const all = API_AREAS.flatMap((a) => [...a.read, ...a.write]);
+    expect([...all].sort()).toEqual([...API_SCOPES].sort());
+  });
+
+  it('round-trip between levels and scopes', async () => {
+    const { scopesFromAreas, areasFromScopes } = await import('./scopes');
+    const scopes = scopesFromAreas({ contacts: 'write', deals: 'read', webhooks: 'write', team: 'read' });
+    expect(scopes).toEqual(
+      expect.arrayContaining(['contacts:read', 'contacts:write', 'contacts:delete', 'deals:read', 'webhooks:manage', 'team:read', 'channels:read'])
+    );
+    expect(scopes).not.toContain('deals:write');
+    const levels = areasFromScopes(scopes);
+    expect(levels).toMatchObject({ contacts: 'write', deals: 'read', webhooks: 'write', team: 'read', messages: 'none' });
+  });
+});

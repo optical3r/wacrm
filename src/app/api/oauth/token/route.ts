@@ -13,7 +13,8 @@
 import { supabaseAdmin } from '@/lib/flows/admin-client';
 import { authenticateClient } from '@/lib/oauth/client-auth';
 import { hashSecret, scopeString, verifyPkce } from '@/lib/oauth/core';
-import { oauthError, oauthJson, preflight, readParams } from '@/lib/oauth/http';
+import { clientIp, oauthError, oauthJson, preflight, readParams } from '@/lib/oauth/http';
+import { hitRateLimit } from '@/lib/auth/api-context';
 import {
   consumeCode,
   createGrant,
@@ -36,7 +37,12 @@ function tokenResponse(t: IssuedTokens): Response {
   });
 }
 
+const TOKEN_CALLS_PER_MINUTE = 60;
+
 export async function POST(request: Request) {
+  const limit = await hitRateLimit(`oauth-token:${clientIp(request)}`, TOKEN_CALLS_PER_MINUTE);
+  if (!limit.success) return oauthError('too_many_requests', 'Too many requests, try again later', 429);
+
   const params = await readParams(request);
   const db = supabaseAdmin();
 

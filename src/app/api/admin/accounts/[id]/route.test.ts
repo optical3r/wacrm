@@ -92,4 +92,19 @@ describe('PATCH /api/admin/accounts/[id]', () => {
     account = null
     expect((await patch({ action: 'block' })).status).toBe(404)
   })
+
+  it('switches the API off and sets the per-minute limit', async () => {
+    account = { id: 'acc-1', plan: 'pro', status: 'active' }
+    expect((await patch({ action: 'set_api_enabled', api_enabled: false })).status).toBe(200)
+    expect(calls).toContainEqual({ table: 'accounts', op: 'update', payload: { api_enabled: false } })
+    expect((await patch({ action: 'set_api_rate_limit', api_rate_limit: 300 })).status).toBe(200)
+    expect(calls).toContainEqual({ table: 'accounts', op: 'update', payload: { api_rate_limit: 300 } })
+    expect((await patch({ action: 'set_api_rate_limit', api_rate_limit: null })).status).toBe(200)
+    expect(calls).toContainEqual({ table: 'accounts', op: 'update', payload: { api_rate_limit: null } })
+  })
+
+  it('refuses a bad API limit', async () => {
+    expect((await patch({ action: 'set_api_rate_limit', api_rate_limit: 0 })).status).toBe(400)
+    expect((await patch({ action: 'set_api_enabled', api_enabled: 'yes' })).status).toBe(400)
+  })
 })

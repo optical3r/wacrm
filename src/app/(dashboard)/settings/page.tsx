@@ -43,7 +43,7 @@ export default function SettingsPage() {
 function SettingsPageInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { defaultCurrency, account } = useAuth();
+  const { defaultCurrency, account, canEditSettings } = useAuth();
   const { mode } = useTheme();
   const t = useTranslations('Settings');
 
@@ -51,7 +51,12 @@ function SettingsPageInner() {
   // section — deep-linkable, and it keeps the existing links in the
   // app sidebar/header working. Legacy tab values (tags, custom-fields)
   // resolve onto their new home; unknown/empty → the Overview landing.
-  const hiddenSections = account?.plan === 'starter' ? STARTER_HIDDEN_SECTIONS : [];
+  // API e MCP is for owners and admins only (they are the ones who
+  // create keys and connect apps).
+  const hiddenSections: readonly SettingsSection[] = [
+    ...(account?.plan === 'starter' ? STARTER_HIDDEN_SECTIONS : []),
+    ...(canEditSettings ? [] : (['api'] as const)),
+  ];
   const requested = resolveSection(searchParams.get('tab'));
   const section = hiddenSections.includes(requested) ? 'overview' : requested;
 

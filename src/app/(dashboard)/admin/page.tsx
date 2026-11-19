@@ -42,6 +42,8 @@ interface AdminAccount {
   messages_30d: number;
   last_message_at: string | null;
   max_numbers: number;
+  api_enabled: boolean;
+  api_rate_limit: number | null;
   organization: { id: string; name: string; max_workspaces: number; workspaces: number } | null;
   whatsapp: { status: string; connected_at: string | null; connected: number; total: number } | null;
 }
@@ -54,7 +56,9 @@ type Action =
   | { action: "set_plan"; plan: Plan }
   | { action: "disconnect_whatsapp" }
   | { action: "set_max_numbers"; max_numbers: number }
-  | { action: "set_max_workspaces"; max_workspaces: number };
+  | { action: "set_max_workspaces"; max_workspaces: number }
+  | { action: "set_api_enabled"; api_enabled: boolean }
+  | { action: "set_api_rate_limit"; api_rate_limit: number | null };
 
 // Actions that cut access or a connection ask first.
 const CONFIRM: Partial<Record<Action["action"], true>> = {
@@ -62,7 +66,11 @@ const CONFIRM: Partial<Record<Action["action"], true>> = {
   block: true,
   set_plan: true,
   disconnect_whatsapp: true,
+  set_api_enabled: true,
 };
+
+/** Per-minute API budget when no limit is set (src/lib/auth/api-context.ts). */
+const API_DEFAULT_LIMIT: Record<Plan, number> = { starter: 60, pro: 120 };
 
 const STATUS_FILTERS = ["all", "pending", "active", "blocked"] as const;
 type StatusFilter = (typeof STATUS_FILTERS)[number];
@@ -256,6 +264,7 @@ export default function AdminPage() {
                   <TableHead>{t("cols.status")}</TableHead>
                   <TableHead>{t("cols.plan")}</TableHead>
                   <TableHead>{t("cols.whatsapp")}</TableHead>
+                  <TableHead>{t("cols.api")}</TableHead>
                   <TableHead className="text-right">{t("cols.team")}</TableHead>
                   <TableHead className="text-right">{t("cols.usage")}</TableHead>
                   <TableHead>{t("cols.dates")}</TableHead>
@@ -344,6 +353,47 @@ export default function AdminPage() {
                         ) : (
                           t("whatsapp.none")
                         )}
+                      </TableCell>
+                      <TableCell className="text-sm">
+                        <p className={a.api_enabled ? "" : "text-muted-foreground"}>
+                          {a.api_enabled
+                            ? t("api.on", { limit: a.api_rate_limit ?? API_DEFAULT_LIMIT[a.plan] })
+                            : t("api.off")}
+                        </p>
+                        <div className="flex flex-wrap gap-x-2 text-xs">
+                          <button
+                            type="button"
+                            className="text-primary underline-offset-2 hover:underline disabled:opacity-50"
+                            disabled={busy}
+                            onClick={() => ask(a, { action: "set_api_enabled", api_enabled: !a.api_enabled })}
+                          >
+                            {a.api_enabled ? t("api.turnOff") : t("api.turnOn")}
+                          </button>
+                          <button
+                            type="button"
+                            className="text-primary underline-offset-2 hover:underline disabled:opacity-50"
+                            disabled={busy}
+                            onClick={() => {
+                              const answer = window.prompt(
+                                t("api.limitPrompt", { name: a.name, default: API_DEFAULT_LIMIT[a.plan] }),
+                                a.api_rate_limit ? String(a.api_rate_limit) : "",
+                              );
+                              if (answer === null) return;
+                              if (answer.trim() === "") {
+                                if (a.api_rate_limit !== null) ask(a, { action: "set_api_rate_limit", api_rate_limit: null });
+                                return;
+                              }
+                              const n = Number(answer);
+                              if (!Number.isInteger(n) || n < 1 || n > 10000) {
+                                toast.error(t("api.limitInvalid"));
+                                return;
+                              }
+                              if (n !== a.api_rate_limit) ask(a, { action: "set_api_rate_limit", api_rate_limit: n });
+                            }}
+                          >
+                            {t("api.setLimit")}
+                          </button>
+                        </div>
                       </TableCell>
                       <TableCell className="text-right tabular-nums">{a.members}</TableCell>
                       <TableCell className="text-right text-xs tabular-nums text-muted-foreground">

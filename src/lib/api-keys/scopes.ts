@@ -131,3 +131,74 @@ export function hasScope(
 const SCOPE_IMPLIES: Partial<Record<ApiScope, readonly ApiScope[]>> = {
   'broadcasts:send': ['broadcasts:read'],
 };
+
+// ------------------------------------------------------------
+// Areas: how the key dialog groups scopes. A person picks, per area,
+// "Nenhum", "Leitura" or "Escrita" (which includes reading) instead of
+// ticking technical scope names. The scopes themselves don't change.
+// ------------------------------------------------------------
+
+export type AreaLevel = 'none' | 'read' | 'write';
+
+export interface ApiArea {
+  id: string;
+  label: string;
+  read: readonly ApiScope[];
+  write: readonly ApiScope[];
+  /** Only exists on one plan. */
+  plan?: 'starter' | 'pro';
+}
+
+export const API_AREAS: readonly ApiArea[] = [
+  { id: 'contacts', label: 'Contatos', read: ['contacts:read'], write: ['contacts:write', 'contacts:delete'] },
+  { id: 'tags', label: 'Etiquetas', read: ['tags:read'], write: ['tags:write'] },
+  { id: 'fields', label: 'Campos personalizados', read: ['fields:read'], write: ['fields:write'] },
+  { id: 'notes', label: 'Notas', read: ['notes:read'], write: ['notes:write'] },
+  { id: 'conversations', label: 'Conversas e grupos', read: ['conversations:read'], write: ['conversations:write'] },
+  { id: 'messages', label: 'Mensagens', read: ['messages:read'], write: ['messages:send'] },
+  { id: 'deals', label: 'Funis e negócios', read: ['deals:read'], write: ['deals:write'] },
+  { id: 'quick_replies', label: 'Respostas rápidas', read: ['quick_replies:read'], write: ['quick_replies:write'] },
+  { id: 'templates', label: 'Modelos de mensagem', read: ['templates:read'], write: ['templates:write'], plan: 'pro' },
+  { id: 'broadcasts', label: 'Disparos', read: ['broadcasts:read'], write: ['broadcasts:send'] },
+  { id: 'flows', label: 'Fluxos', read: ['flows:read'], write: ['flows:write'] },
+  { id: 'automations', label: 'Automações', read: ['automations:read'], write: ['automations:write'] },
+  { id: 'notifications', label: 'Notificações', read: ['notifications:read'], write: ['notifications:write'] },
+  { id: 'team', label: 'Equipe e números', read: ['team:read', 'channels:read'], write: [] },
+  { id: 'reports', label: 'Relatórios', read: ['reports:read'], write: [] },
+  { id: 'webhooks', label: 'Webhooks', read: [], write: ['webhooks:manage'] },
+];
+
+/** Levels an area offers (an area with no write scopes stops at read). */
+export function areaLevels(area: ApiArea): AreaLevel[] {
+  const out: AreaLevel[] = ['none'];
+  if (area.read.length) out.push('read');
+  if (area.write.length) out.push('write');
+  return out;
+}
+
+/** Scopes for a set of area levels. */
+export function scopesFromAreas(levels: Record<string, AreaLevel>): ApiScope[] {
+  const out = new Set<ApiScope>();
+  for (const area of API_AREAS) {
+    const level = levels[area.id] ?? 'none';
+    if (level === 'none') continue;
+    area.read.forEach((s) => out.add(s));
+    if (level === 'write') area.write.forEach((s) => out.add(s));
+  }
+  return API_SCOPES.filter((s) => out.has(s));
+}
+
+/**
+ * The level each area has on a key, for display. An area counts as
+ * "write" when any of its write scopes is there, "read" when only its
+ * read scopes are.
+ */
+export function areasFromScopes(scopes: readonly string[]): Record<string, AreaLevel> {
+  const out: Record<string, AreaLevel> = {};
+  for (const area of API_AREAS) {
+    if (area.write.some((s) => scopes.includes(s))) out[area.id] = 'write';
+    else if (area.read.some((s) => hasScope(scopes, s))) out[area.id] = 'read';
+    else out[area.id] = 'none';
+  }
+  return out;
+}

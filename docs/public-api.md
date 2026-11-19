@@ -8,6 +8,15 @@ broadcasts — without going through the dashboard UI.
 > messages / contacts / conversations / broadcasts endpoints, and
 > outbound event [webhooks](#webhooks) all ship now.
 
+> The Portuguese reference lives at **`/docs/api`** and the machine-
+> readable spec at **`/api/v1/openapi.json`** (OpenAPI 3.1). Both are
+> built from the MCP tool list (`src/lib/api/openapi.ts`), so they track
+> the code. Keys, connected apps, usage (last 30 days) and webhooks
+> (with the latest deliveries, migration 065) are managed in
+> **Configurações › API e MCP**, by owners and admins. The super admin
+> switches the API on/off and sets the per-minute limit per workspace in
+> `/admin`.
+
 ## Authentication
 
 Every request authenticates with an **API key**, sent as a bearer

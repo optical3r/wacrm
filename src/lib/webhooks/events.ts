@@ -49,6 +49,25 @@ export const WEBHOOK_EVENT_DESCRIPTIONS: Record<WebhookEvent, string> = {
   'flow.ended': 'A flow run ended (completed, timed out, stopped or failed)',
 };
 
+/** Portuguese labels, for the webhooks screen and /docs/api. */
+export const WEBHOOK_EVENT_LABELS_PT: Record<WebhookEvent, string> = {
+  'message.received': 'Mensagem recebida de um contato',
+  'message.status_updated': 'Mensagem enviada mudou de status (enviada, entregue, lida, falhou)',
+  'conversation.created': 'Conversa nova aberta',
+  'conversation.status_changed': 'Conversa mudou de status (aberta, pendente, fechada)',
+  'conversation.owners_changed': 'Donos do lead mudaram',
+  'contact.created': 'Contato criado',
+  'contact.deleted': 'Contato apagado',
+  'contact.tag_added': 'Etiqueta posta num contato',
+  'contact.tag_removed': 'Etiqueta tirada de um contato',
+  'deal.created': 'Negócio criado',
+  'deal.stage_changed': 'Negócio mudou de etapa',
+  'deal.status_changed': 'Negócio ganho, perdido ou reaberto',
+  'deal.deleted': 'Negócio apagado',
+  'flow.started': 'Fluxo iniciado para um contato',
+  'flow.ended': 'Fluxo terminou (concluído, expirado, parado ou com falha)',
+};
+
 /** Events the database emits through /api/webhooks/emit (migration 063). */
 export const DB_EMITTED_EVENTS: readonly WebhookEvent[] = [
   'conversation.status_changed',

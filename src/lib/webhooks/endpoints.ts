@@ -64,3 +64,6 @@ export function normalizeWebhookUrl(input: unknown): string | null {
     return null;
   }
 }
+
+/** Endpoints one workspace may register. */
+export const MAX_WEBHOOK_ENDPOINTS = 10;

@@ -12,6 +12,7 @@ import { ok, okList, fail } from '@/lib/api/v1/respond';
 import { encrypt } from '@/lib/whatsapp/encryption';
 import { normalizeEvents } from '@/lib/webhooks/events';
 import {
+  MAX_WEBHOOK_ENDPOINTS,
   WEBHOOK_PUBLIC_COLUMNS,
   serializeWebhookEndpoint,
   generateWebhookSecret,
@@ -61,6 +62,13 @@ export const POST = apiRoute('webhooks:manage', async (ctx, request) => {
         "'events' must be a non-empty array of known event names",
         400
       );
+    }
+
+    const { count } = await ctx.db
+      .from('webhook_endpoints')
+      .select('id', { count: 'exact', head: true });
+    if ((count ?? 0) >= MAX_WEBHOOK_ENDPOINTS) {
+      return fail('bad_request', `Limite de ${MAX_WEBHOOK_ENDPOINTS} webhooks por workspace`, 400);
     }
 
     const secret = generateWebhookSecret();

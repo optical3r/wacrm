@@ -58,7 +58,10 @@ const SECURITY_HEADERS = [
       "connect-src 'self' https://*.supabase.co wss://*.supabase.co",
       "frame-ancestors 'none'",
       "base-uri 'self'",
-      "form-action 'self'",
+      // The OAuth consent form (/oauth/authorize) answers with a redirect
+      // back to the app that asked (claude.ai, or a local port for
+      // desktop clients), which form-action also governs.
+      "form-action 'self' https: http://localhost:* http://127.0.0.1:*",
     ].join("; "),
   },
 ] as const;

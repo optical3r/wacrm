@@ -22,7 +22,9 @@ export const GET = apiRoute(null, async (ctx) => {
   return ok({
     account: { id: ctx.accountId, name, plan: ctx.plan },
     key: {
-      id: ctx.keyId,
+      // 'api_key', or 'oauth' for an app connected by login (claude.ai).
+      type: ctx.authType,
+      id: ctx.keyId ?? ctx.oauthGrantId,
       scopes: ctx.scopes,
       mcp: { enabled: ctx.mcp.enabled, allow_writes: ctx.mcp.allowWrites },
     },

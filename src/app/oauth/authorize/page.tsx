@@ -92,6 +92,16 @@ export default async function OAuthAuthorizePage({ searchParams }: { searchParam
   const params = await searchParams;
   const origin = await currentOrigin();
 
+  // Log in first: an anonymous visitor never makes us fetch a client
+  // metadata document or touch the database.
+  const supabase = await createClient();
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) {
+    redirect(`/login?next=${encodeURIComponent(`/oauth/authorize?${queryString(params)}`)}`);
+  }
+
   const validation = await validateAuthorizeRequest(supabaseAdmin(), params, origin);
   if (!validation.ok) {
     if (validation.kind === 'redirect') {
@@ -108,16 +118,19 @@ export default async function OAuthAuthorizePage({ searchParams }: { searchParam
   }
   const req = validation.request;
 
-  const supabase = await createClient();
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) {
-    redirect(`/login?next=${encodeURIComponent(`/oauth/authorize?${queryString(params)}`)}`);
-  }
 
   const appName = req.client.client_name ?? 'Um app';
-  const returnHost = new URL(req.redirectUri).host;
+  const returnUrl = new URL(req.redirectUri);
+  const returnHost = returnUrl.host;
+  // Any app can register itself with any name. Hosts we know are shown
+  // plainly; anything else gets a warning to check the address.
+  const knownHost =
+    returnUrl.hostname === 'claude.ai' ||
+    returnUrl.hostname.endsWith('.claude.ai') ||
+    returnUrl.hostname === 'claude.com' ||
+    returnUrl.hostname.endsWith('.claude.com') ||
+    returnUrl.hostname === 'localhost' ||
+    returnUrl.hostname === '127.0.0.1';
   const workspaces = await adminWorkspaces(user.id);
 
   if (workspaces.length === 0) {
@@ -138,6 +151,17 @@ export default async function OAuthAuthorizePage({ searchParams }: { searchParam
     >
       <form method="post" action="/api/oauth/authorize" className="flex flex-col gap-6">
         <input type="hidden" name="ticket" value={ticket} />
+
+        <div
+          className={
+            knownHost
+              ? 'rounded-lg border border-border bg-muted/40 px-3 py-2 text-xs text-muted-foreground'
+              : 'rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs text-amber-300'
+          }
+        >
+          O nome &quot;{appName}&quot; é informado pelo próprio app. O acesso vai para <strong>{returnHost}</strong>.
+          {knownHost ? null : ' Só continue se você reconhece esse endereço e foi você quem pediu para conectar.'}
+        </div>
 
         <fieldset className="flex flex-col gap-2">
           <legend className="mb-2 text-sm font-medium text-foreground">Workspace</legend>

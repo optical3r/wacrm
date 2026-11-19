@@ -229,6 +229,17 @@ export async function createGrant(db: SupabaseClient, code: OAuthCodeRow): Promi
     console.error('[oauth] grant insert failed:', error?.message);
     return null;
   }
+  // Connecting the same app again (same person, same workspace)
+  // replaces the old connection instead of leaving it alive beside it.
+  await db
+    .from('oauth_grants')
+    .update({ revoked_at: new Date().toISOString(), access_hash: null, refresh_hash: null })
+    .eq('client_id', code.client_id)
+    .eq('account_id', code.account_id)
+    .eq('user_id', code.user_id)
+    .neq('id', data.id)
+    .is('revoked_at', null);
+
   return {
     grantId: data.id as string,
     accessToken: t.accessToken,

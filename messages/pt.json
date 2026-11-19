@@ -2026,7 +2026,7 @@
       "fields": "Campos e tags",
       "deals": "Negócios e moeda",
       "members": "Membros da equipe",
-      "api": "Chaves de API"
+      "api": "API e MCP"
     },
     "groups": {
       "account": "Conta",
@@ -2126,8 +2126,8 @@
       }
     },
     "apiKeys": {
-      "title": "Chaves de API",
-      "description": "As chaves autenticam a API REST pública (<apiCode>/api/v1</apiCode>) para que você crie suas próprias automações. Envie-as como <headerCode>Authorization: Bearer &lt;key&gt;</headerCode>.",
+      "title": "API e MCP",
+      "description": "As chaves dão acesso à API REST (<apiCode>/api/v1</apiCode>) e ao MCP deste workspace. Envie como <headerCode>Authorization: Bearer &lt;chave&gt;</headerCode>.",
       "newApiKey": "Nova chave de API",
       "noApiKeys": "Nenhuma chave de API ainda.",
       "createOneHint": "Clique em <bold>Nova chave de API</bold> para criar uma.",
@@ -2193,7 +2193,54 @@
       "appsDisconnected": "{name} foi desconectado",
       "appsDisconnectFailed": "Não foi possível desconectar o app",
       "appsLoadFailed": "Não foi possível carregar os apps conectados",
-      "appsNeverUsed": "nunca usado"
+      "appsNeverUsed": "nunca usado",
+      "levelNone": "Nenhum",
+      "levelRead": "Leitura",
+      "levelWrite": "Escrita",
+      "areasLabel": "Permissões por área",
+      "areasHint": "Escrita inclui leitura. Em Contatos, escrita também permite apagar. Dê só o que a integração precisa.",
+      "presetRead": "Tudo leitura",
+      "presetAll": "Tudo",
+      "presetNone": "Limpar",
+      "usageTitle": "Uso nos últimos 30 dias",
+      "usageDesc": "Chamadas da API e do MCP por chave e por app.",
+      "usageTotals": "{calls} chamadas, {errors} com erro, por chave e por app.",
+      "usageLoadFailed": "Não foi possível carregar o uso.",
+      "usageEmpty": "Nenhuma chamada nos últimos 30 dias.",
+      "usageColCredential": "Chave ou app",
+      "usageColCalls": "Chamadas",
+      "usageColMcp": "Pelo MCP",
+      "usageColErrors": "Erros",
+      "usageColLast": "Última",
+      "usageApp": "app",
+      "usageRecentErrors": "Últimos erros",
+      "whNoDeliveries": "Nenhuma entrega ainda.",
+      "whFailed": "falhou",
+      "whLoadFailed": "Não foi possível carregar os webhooks",
+      "whDeleteFailed": "Não foi possível apagar o webhook",
+      "whDeleted": "Webhook apagado",
+      "whTitle": "Webhooks",
+      "whDesc": "O LabCRM avisa o seu sistema (n8n, Make, servidor próprio) quando algo acontece. Cada aviso é assinado com o segredo do webhook.",
+      "whNew": "Novo webhook",
+      "whEmpty": "Nenhum webhook cadastrado.",
+      "whLastOk": "última entrega certa em {date}",
+      "whNeverDelivered": "nenhuma entrega certa ainda",
+      "whFailures": "{count} falhas seguidas",
+      "whAutoDisabled": "desligado depois de falhas",
+      "whActive": "Ligado",
+      "whDeliveries": "Entregas",
+      "whDelete": "Apagar webhook",
+      "whCreateFailed": "Não foi possível criar o webhook",
+      "whSecretTitle": "Guarde o segredo do webhook",
+      "whSecretDesc": "Use para conferir a assinatura X-Wacrm-Signature de cada aviso. Ele aparece só agora.",
+      "whNewTitle": "Novo webhook",
+      "whNewDesc": "Informe o endereço https que vai receber os avisos e escolha os eventos.",
+      "whUrlLabel": "Endereço (https)",
+      "whEventsLabel": "Eventos",
+      "whAllEvents": "Todos",
+      "whCreate": "Criar webhook",
+      "docsLink": "Referência completa da API",
+      "docsHint": "Todos os endpoints, permissões e exemplos em português."
     },
     "deals": {
       "title": "Negócios e moeda",
@@ -3200,7 +3247,8 @@
       "team": "Equipe",
       "usage": "Uso (30 dias)",
       "dates": "Datas",
-      "actions": "Ações"
+      "actions": "Ações",
+      "api": "API e MCP"
     },
     "actions": {
       "approveStarter": "Aprovar Starter",
@@ -3221,7 +3269,9 @@
       "set_plan": "Plano de {name} alterado.",
       "disconnect_whatsapp": "WhatsApp de {name} desconectado.",
       "set_max_numbers": "Limite de números de {name} alterado.",
-      "set_max_workspaces": "Limite de workspaces do cliente de {name} alterado."
+      "set_max_workspaces": "Limite de workspaces do cliente de {name} alterado.",
+      "set_api_enabled": "API de {name} alterada.",
+      "set_api_rate_limit": "Limite da API de {name} alterado."
     },
     "confirm": {
       "reject": {
@@ -3239,6 +3289,10 @@
       "disconnect_whatsapp": {
         "title": "Desconectar o WhatsApp de {name}?",
         "desc": "O número para de enviar e receber até a organização conectar de novo."
+      },
+      "set_api_enabled": {
+        "title": "Mudar a API de {name}?",
+        "desc": "Desligada, todas as chaves e apps conectados (como o claude.ai) deste workspace param de funcionar na hora. Nada é apagado; ligar de novo devolve o acesso."
       }
     },
     "limitPrompt": "Limite de números de {name} (1 a 50):",
@@ -3247,6 +3301,15 @@
       "line": "Cliente {client} · {count} de {max} workspaces",
       "prompt": "Quantos workspaces o cliente {client} pode ter?",
       "setLimit": "Alterar"
+    },
+    "api": {
+      "on": "Ligada · {limit}/min",
+      "off": "Desligada",
+      "turnOff": "Desligar",
+      "turnOn": "Ligar",
+      "setLimit": "Limite",
+      "limitPrompt": "Chamadas por minuto da API de {name} (1 a 10000). Deixe vazio para o padrão do plano ({default}).",
+      "limitInvalid": "Informe um número inteiro de 1 a 10000."
     }
   },
   "AccountStatusGate": {
